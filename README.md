@@ -12,7 +12,7 @@ A tiny macOS file viewer that opens instantly. One window per file, zoom in / ou
 | rtf, doc, docx | AppKit's own importers: fonts, styles, tables and pictures on a white page |
 | xls, pptx, numbers, pages, key | Apple's Quick Look renderer |
 | gpx | Track, waypoints, distance, climb and time on OpenStreetMap tiles, or OpenTopoMap (contours, hillshade). Files with no extension are recognised by content. |
-| mp4, mov, m4a, mp3 | AVKit player |
+| mp4, mov, m4v; m4a, mp3, wav, aac, aiff, flac, caf, m4b, ogg, opus | AVKit player |
 | md | Two columns: source on the left, GitHub-flavoured rendering (cmark-gfm) on the right. They scroll together and refresh when the file changes. |
 | txt, tcl, adp, js and anything else | Plain text |
 

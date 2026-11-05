@@ -26,7 +26,7 @@ struct Editor {
         func set(_ editor: Editor, _ exts: [String]) { for e in exts { map[e] = editor } }
         set(photoshop, ["jpg", "jpeg", "png", "gif", "tif", "tiff", "avif", "heic", "heif", "webp", "bmp"])
         set(finalCut, ["mp4", "mov", "m4v"])
-        set(audition, ["m4a", "mp3", "wav", "aac", "aiff", "aif", "flac"])
+        set(audition, ["m4a", "mp3", "wav", "aac", "aiff", "aif", "aifc", "flac", "caf", "m4b", "m4r", "ogg", "oga", "opus"])
         set(excel, ["xlsx", "xls", "csv", "tsv"])
         set(word, ["rtf", "doc", "docx"])
         set(powerPoint, ["pptx", "ppt"])
