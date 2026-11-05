@@ -28,6 +28,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     private var markup: ImageViewer?
     /// Where the picture tools act: the still being marked up, else the window's own viewer.
     private var tools: Viewer { markup ?? viewer }
+    /// Over a playing video while Arrow or Box stays chosen: a drag on the video pauses on
+    /// that frame and starts drawing straight away.
+    private var catcher: ToolCatcher?
+    private var armedArrow: Bool { arrowControl?.isSelected(forSegment: 0) ?? false }
+    private var armedBox: Bool { boxControl?.isSelected(forSegment: 0) ?? false }
     private weak var boxControl: NSSegmentedControl?
 
     static func open(_ url: URL) {
@@ -242,12 +247,38 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         iv.view.removeFromSuperview()
         markup = nil
         viewer.showControls(true)
-        arrowControl?.setSelected(false, forSegment: 0)
-        boxControl?.setSelected(false, forSegment: 0)
+        // Arrow or Box stays chosen, for the next still.
         cropControl?.isEnabled = true
         saveControl?.isEnabled = false
         window?.makeFirstResponder(viewer.view)
+        updateCatcher()
         if play { viewer.resumePlaying() }
+    }
+
+    /// Puts the drag-catcher over the video while a tool is chosen and no still is up.
+    private func updateCatcher() {
+        let want = viewer.canMarkUpFrames && markup == nil && (armedArrow || armedBox)
+        if want, catcher == nil, let content = window?.contentView {
+            let c = ToolCatcher(frame: content.bounds)
+            c.autoresizingMask = [.width, .height]
+            c.onDown = { [weak self] in self?.startStillFromDrag() }
+            content.addSubview(c)
+            catcher = c
+        } else if !want {
+            catcher?.removeFromSuperview()
+            catcher = nil
+        }
+    }
+
+    /// A drag on the playing video with a tool chosen: pause on this frame and hand the
+    /// drag to the still's drawing layer.
+    private func startStillFromDrag() -> NSView? {
+        catcher?.removeFromSuperview()
+        catcher = nil
+        guard beginMarkup() else { return nil }
+        tools.arrowMode = armedArrow
+        tools.boxMode = armedBox
+        return markup?.overlayView
     }
 
     @objc func cropImage(_ sender: Any?) {
@@ -283,6 +314,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         markup?.focusMarkup()
         arrowControl?.setSelected(arrow, forSegment: 0)
         boxControl?.setSelected(box, forSegment: 0)
+        updateCatcher()
     }
 
     @objc func saveWithArrows(_ sender: Any?) {
@@ -339,8 +371,32 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     func windowWillClose(_ notification: Notification) {
         markup?.tearDown()
+        catcher?.removeFromSuperview()
         viewer.tearDown()
         Self.open.removeAll { $0 === self }
         if Self.open.isEmpty { (NSApp.delegate as? AppDelegate)?.lastWindowClosed() }
     }
+}
+
+/// Lies over a playing video while Arrow or Box is chosen. A drag on it pauses on the
+/// frame (onDown returns the still's drawing layer) and is passed on to draw there. The
+/// bottom strip is left alone, for the player's controls.
+final class ToolCatcher: NSView {
+    var onDown: (() -> NSView?)?
+    private weak var target: NSView?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let p = convert(point, from: superview)
+        return bounds.contains(p) && p.y > 70 ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        target = onDown?()
+        target?.mouseDown(with: event)
+    }
+    override func mouseDragged(with event: NSEvent) { target?.mouseDragged(with: event) }
+    override func mouseUp(with event: NSEvent) { target?.mouseUp(with: event) }
 }
