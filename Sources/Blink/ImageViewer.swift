@@ -89,6 +89,8 @@ final class ImageViewer: Viewer {
     var onCropSelectionChange: ((Bool) -> Void)? { didSet { overlay?.onChange = onCropSelectionChange } }
     var onArrowsChange: ((Bool) -> Void)? { didSet { overlay?.onArrowsChange = onArrowsChange } }
     var onPlayKey: (() -> Void)? { didSet { overlay?.onPlayKey = onPlayKey } }
+    var typingLabel: Bool { overlay?.typingLabel ?? false }
+    var hasMarks: Bool { hasArrows || hasCropSelection }
     /// The drawing layer, for a drag that started elsewhere (on the playing video).
     var overlayView: NSView? { overlay }
     /// Takes the keyboard, so typing labels arrows straight away.

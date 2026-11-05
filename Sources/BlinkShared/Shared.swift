@@ -24,6 +24,11 @@ import AppKit
     @objc optional var currentSeconds: Double { get }
     /// Video only: carries on playing.
     @objc optional func play()
+    /// Video only: plays if paused, pauses if playing.
+    @objc optional func togglePlay()
+    @objc optional var isPlaying: Bool { get }
+    /// Video only: moves the playhead by this many seconds (exactly, staying paused).
+    @objc optional func step(by seconds: Double)
     /// Video only: shows or hides the player's controls (hidden while a frame is marked up).
     @objc optional func showControls(_ show: Bool)
     /// Video only: the frame pauseAndGrabFrame returned: its exact time, its number

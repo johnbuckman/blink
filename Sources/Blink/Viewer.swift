@@ -31,6 +31,9 @@ protocol Viewer: AnyObject {
     func pauseAndGrabFrame() -> VideoFrame?
     func resumePlaying()
     func showControls(_ show: Bool)
+    func togglePlay()
+    var isPlaying: Bool { get }
+    func step(by seconds: Double)
 }
 
 /// A still taken from a video: exactly when, and which frame.
@@ -57,6 +60,9 @@ extension Viewer {
     func pauseAndGrabFrame() -> VideoFrame? { nil }
     func resumePlaying() {}
     func showControls(_ show: Bool) {}
+    func togglePlay() {}
+    var isPlaying: Bool { false }
+    func step(by seconds: Double) {}
 }
 
 enum FileKind {
@@ -163,4 +169,7 @@ final class PluginViewer: Viewer {
     }
     func resumePlaying() { plugin.play?() }
     func showControls(_ show: Bool) { plugin.showControls?(show) }
+    func togglePlay() { plugin.togglePlay?() }
+    var isPlaying: Bool { plugin.isPlaying ?? false }
+    func step(by seconds: Double) { plugin.step?(by: seconds) }
 }

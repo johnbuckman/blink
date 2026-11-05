@@ -288,6 +288,10 @@ final class CropOverlay: NSView {
 
     func clearArrows() { setArrows([]) }
 
+    /// Whether a key typed now would go into a label: an arrow is selected and its label
+    /// is under way (an empty label lets Space through, to play the video).
+    var typingLabel: Bool { editing.map { $0 < arrows.count && !arrows[$0].text.isEmpty } ?? false }
+
     /// Puts back arrows saved with the file (not an undoable change).
     func restore(_ saved: [Arrow]) { arrows = saved }
 

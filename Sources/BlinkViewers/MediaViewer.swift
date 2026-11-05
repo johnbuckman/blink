@@ -120,6 +120,15 @@ import BlinkShared
         return image
     }
 
+    var isPlaying: Bool { player.rate != 0 }
+    func togglePlay() { isPlaying ? player.pause() : player.play() }
+
+    func step(by seconds: Double) {
+        let duration = player.currentItem.map { CMTimeGetSeconds($0.duration) } ?? .infinity
+        let to = max(0, min(CMTimeGetSeconds(player.currentTime()) + seconds, duration.isFinite ? duration : .infinity))
+        player.seek(to: CMTime(seconds: to, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
     func showControls(_ show: Bool) {
         playerView.controlsStyle = show ? (audioOnly ? .inline : .floating) : .none
     }

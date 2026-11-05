@@ -26,6 +26,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     private var titleButtons: [(control: NSSegmentedControl, labels: [String], hints: [String], widths: [CGFloat])] = []
     private weak var titleHolder: NSView?
     private var flagsMonitor: Any?
+    private var keyMonitor: Any?
     private var showingHints = false
     private weak var cropControl: NSSegmentedControl?
     private weak var saveControl: NSSegmentedControl?
@@ -172,6 +173,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         accessory.layoutAttribute = .trailing
         window.addTitlebarAccessoryViewController(accessory)
         LaunchTiming.mark("window + zoom buttons made")
+        // Video keys, ahead of the player and the title-bar buttons (which would otherwise
+        // take Space once clicked): Space always plays or pauses; when paused, ← → step 1 s,
+        // with ⇧ 0.1 s and with ⌥ 10 s.
+        if viewer.canMarkUpFrames {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.window?.isKeyWindow == true else { return event }
+                return self.videoKey(event) ? nil : event
+            }
+        }
         // Holding ⌘ shows each button's shortcut on it.
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             guard let self, self.window?.isKeyWindow == true else { return event }
@@ -205,6 +215,37 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     }
 
     func windowDidResignKey(_ notification: Notification) { showHints(false) }
+
+    /// Returns true when the key was used.
+    private func videoKey(_ event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if markup?.typingLabel == true { return false }          // keys go into the label
+        switch event.keyCode {
+        case 49 where mods.isEmpty:                               // Space
+            if markup != nil { endMarkup(play: true) } else { viewer.togglePlay() }
+            return true
+        case 123, 124 where mods.isSubset(of: [.shift, .option]): // ← →
+            guard !viewer.isPlaying else { return false }
+            // A still with marks on it stays put; an empty one follows the playhead.
+            if let m = markup, m.hasMarks { return false }
+            let size: Double = mods.contains(.option) ? 10 : mods.contains(.shift) ? 0.1 : 1
+            let wasMarking = markup != nil
+            if wasMarking { endMarkup() }
+            viewer.step(by: event.keyCode == 123 ? -size : size)
+            if wasMarking {
+                // Wait for the seek to land, then pause on the new frame with the same tool.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    guard let self, self.beginMarkup() else { return }
+                    self.tools.arrowMode = self.armedArrow
+                    self.tools.boxMode = self.armedBox
+                    self.catcher?.removeFromSuperview(); self.catcher = nil
+                }
+            }
+            return true
+        default:
+            return false
+        }
+    }
 
     required init?(coder: NSCoder) { fatalError() }
 
@@ -427,6 +468,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         markup?.tearDown()
         catcher?.removeFromSuperview()
         if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         viewer.tearDown()
         Self.open.removeAll { $0 === self }
         if Self.open.isEmpty { (NSApp.delegate as? AppDelegate)?.lastWindowClosed() }
