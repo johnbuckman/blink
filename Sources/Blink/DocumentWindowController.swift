@@ -22,6 +22,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     /// The app the Edit button opens this file in; nil = no Edit button.
     let editor: Editor?
     private weak var arrowControl: NSSegmentedControl?
+    /// Title-bar buttons and what they read while ⌘ is held: their keyboard shortcuts.
+    private var titleButtons: [(control: NSSegmentedControl, labels: [String], hints: [String], widths: [CGFloat])] = []
+    private weak var titleHolder: NSView?
+    private var flagsMonitor: Any?
+    private var showingHints = false
     private weak var cropControl: NSSegmentedControl?
     private weak var saveControl: NSSegmentedControl?
     /// A paused video's frame being marked up, laid over the player.
@@ -143,24 +148,63 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             preview.sizeToFit()
             controls.insert(preview, at: 0)
         }
-        let gap: CGFloat = 10
-        let width = controls.reduce(0) { $0 + $1.frame.width } + gap * CGFloat(controls.count - 1)
         // A little taller than the buttons, with them raised, so they sit inside the
         // title bar rather than on the edge of the content below it.
-        let lift: CGFloat = 6
-        let holder = NSView(frame: NSRect(x: 0, y: 0, width: width + 12, height: control.frame.height + lift))
-        var x: CGFloat = 0
-        for c in controls {
-            c.frame.origin = NSPoint(x: x, y: lift)
-            holder.addSubview(c)
-            x += c.frame.width + gap
+        let holder = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: control.frame.height + 6))
+        for c in controls { holder.addSubview(c) }
+        titleHolder = holder
+        let shortcuts: [String: String] = ["Crop": "⌘K", "Save": "⌘S", "Arrow": "⇧⌘A", "Box": "⇧⌘B", "Preview": "⇧⌘P"]
+        for case let c as NSSegmentedControl in controls {
+            let labels = (0..<c.segmentCount).map { c.label(forSegment: $0) ?? "" }
+            let hints: [String]
+            if c === control {
+                hints = ["⌘−", "⌘+", "⌘0", "⌘1"]
+            } else if labels.first?.hasPrefix("Edit in") == true {
+                hints = [labels[0] + "  ⌘E"]
+            } else {
+                hints = labels.map { l in shortcuts[l].map { l + "  " + $0 } ?? l }
+            }
+            titleButtons.append((c, labels, hints, (0..<c.segmentCount).map { c.width(forSegment: $0) }))
         }
+        layoutTitleButtons()
         let accessory = NSTitlebarAccessoryViewController()
         accessory.view = holder
         accessory.layoutAttribute = .trailing
         window.addTitlebarAccessoryViewController(accessory)
         LaunchTiming.mark("window + zoom buttons made")
+        // Holding ⌘ shows each button's shortcut on it.
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            guard let self, self.window?.isKeyWindow == true else { return event }
+            self.showHints(event.modifierFlags.contains(.command))
+            return event
+        }
     }
+
+    private func layoutTitleButtons() {
+        guard let holder = titleHolder else { return }
+        let gap: CGFloat = 10, lift: CGFloat = 6
+        var x: CGFloat = 0
+        for b in titleButtons {
+            b.control.frame.origin = NSPoint(x: x, y: lift)
+            x += b.control.frame.width + gap
+        }
+        holder.setFrameSize(NSSize(width: x - gap + 12, height: holder.frame.height))
+    }
+
+    private func showHints(_ on: Bool) {
+        guard on != showingHints else { return }
+        showingHints = on
+        for b in titleButtons {
+            for i in 0..<b.control.segmentCount {
+                b.control.setLabel(on ? b.hints[i] : b.labels[i], forSegment: i)
+                b.control.setWidth(on ? 0 : b.widths[i], forSegment: i)   // 0 = fit the label
+            }
+            b.control.sizeToFit()
+        }
+        layoutTitleButtons()
+    }
+
+    func windowDidResignKey(_ notification: Notification) { showHints(false) }
 
     required init?(coder: NSCoder) { fatalError() }
 
@@ -382,6 +426,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     func windowWillClose(_ notification: Notification) {
         markup?.tearDown()
         catcher?.removeFromSuperview()
+        if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
         viewer.tearDown()
         Self.open.removeAll { $0 === self }
         if Self.open.isEmpty { (NSApp.delegate as? AppDelegate)?.lastWindowClosed() }

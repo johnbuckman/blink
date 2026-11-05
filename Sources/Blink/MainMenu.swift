@@ -29,7 +29,7 @@ enum MainMenu {
         file.addItem(withTitle: "Open…", action: #selector(AppDelegate.showOpenPanel(_:)), keyEquivalent: "o")
         file.addItem(withTitle: "Show in Finder", action: #selector(DocumentWindowController.showInFinder(_:)), keyEquivalent: "R")
         file.addItem(withTitle: "Edit", action: #selector(DocumentWindowController.editFile(_:)), keyEquivalent: "e")
-        file.addItem(withTitle: "Open in Preview", action: #selector(DocumentWindowController.openInPreview(_:)), keyEquivalent: "")
+        file.addItem(withTitle: "Open in Preview", action: #selector(DocumentWindowController.openInPreview(_:)), keyEquivalent: "P")
         file.addItem(.separator())
         file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         add(file, title: "File", to: main)
