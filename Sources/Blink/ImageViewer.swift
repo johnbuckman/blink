@@ -78,6 +78,10 @@ final class ImageViewer: Viewer {
     private let canvas = FlippedView()
     private let url: URL
     private let source: CGImageSource?
+    /// Set when this file was made by Blink and its original is still there: the window
+    /// then shows the original's pixels (the kept part) with the arrows still editable,
+    /// and Save updates this file.
+    private var edits: BlinkEdits?
     private var overlay: CropOverlay?
     /// Tells the window to enable or disable its Crop button.
     var onCropSelectionChange: ((Bool) -> Void)? { didSet { overlay?.onChange = onCropSelectionChange } }
@@ -100,13 +104,18 @@ final class ImageViewer: Viewer {
 
     init(url: URL) {
         self.url = url
-        source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
+        var edits = BlinkEdits.read(url)
+        if let e = edits, !FileManager.default.isReadableFile(atPath: e.original) { edits = nil }
+        let readURL = edits.map { URL(fileURLWithPath: $0.original) } ?? url
+        source = CGImageSourceCreateWithURL(readURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         canvas.wantsLayer = true
         scroll.documentView = canvas
         guard let source else { showError("Can't read this image."); return }
         let count = CGImageSourceGetCount(source)
         guard count > 0 else { showError("Can't read this image."); return }
 
+        if count != 1 { edits = nil }
+        self.edits = edits
         let first = pointSize(at: 0)
         delays = (0..<count).compactMap { frameDelay(at: $0) }
         let animated = count > 1 && delays.count == count
@@ -133,11 +142,19 @@ final class ImageViewer: Viewer {
                 width = max(width, s.width)
             }
             for i in rects.indices { rects[i].origin.x = (width - rects[i].width) / 2 }
+            if let e = edits {
+                // Just the kept part of the original, at the original's scale.
+                let k = first.width / CGFloat(e.originalSize[0])
+                rects = [NSRect(x: 0, y: 0, width: e.regionRect.width * k, height: e.regionRect.height * k)]
+                width = rects[0].width
+                y = rects[0].height
+            }
             canvas.frame = NSRect(x: 0, y: 0, width: width, height: y - gap)
             naturalSize = count > 1 ? NSSize(width: width, height: rects[0].height) : canvas.frame.size
             pageLayers = rects.map { makeLayer($0) }
+            let region = edits?.regionRect
             for i in 0..<count {
-                decode(i) { [weak self] img in self?.pageLayers[i].contents = img }
+                decode(i) { [weak self] img in self?.pageLayers[i].contents = region.flatMap { img?.cropping(to: $0) } ?? img }
             }
         }
         if pageLayers.count == 1 {
@@ -145,7 +162,11 @@ final class ImageViewer: Viewer {
             o.autoresizingMask = [.width, .height]
             canvas.addSubview(o)
             o.sampler = { [weak self] in self?.colorSampler() }
+            o.clipsToBounds = true    // an arrow running off the edge is cut at the edge
             overlay = o
+            if let e = edits {
+                o.restore(e.restoredArrows(pointsPerPixel: first.width / CGFloat(e.originalSize[0])))
+            }
         }
     }
 
@@ -234,12 +255,23 @@ final class ImageViewer: Viewer {
         let base = url.deletingPathExtension().lastPathComponent
         var n = 1
         var out = dir.appendingPathComponent("\(base)-\(suffix)-\(n).\(ext)")
-        while FileManager.default.fileExists(atPath: out.path) {
-            n += 1
-            out = dir.appendingPathComponent("\(base)-\(suffix)-\(n).\(ext)")
+        if suffix == "arrows", edits != nil {
+            out = url    // reopened for editing: Save updates this file
+        } else {
+            while FileManager.default.fileExists(atPath: out.path) {
+                n += 1
+                out = dir.appendingPathComponent("\(base)-\(suffix)-\(n).\(ext)")
+            }
         }
 
-        let note = describe(original: img, region: px, arrows: arrows, scale: scale)
+        // Where this lies in the original picture (this window may already show only part of it).
+        let origin = edits.map { $0.regionRect.origin } ?? .zero
+        let originalPath = edits?.original ?? url.path
+        let originalSize = edits.map { CGSize(width: $0.originalSize[0], height: $0.originalSize[1]) }
+            ?? CGSize(width: img.width, height: img.height)
+        let inOriginal = px.offsetBy(dx: origin.x, dy: origin.y)
+        let note = describe(originalPath: originalPath, originalSize: originalSize, region: inOriginal,
+                            arrows: arrows, scale: scale, origin: px.origin)
         var props = (source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) } as? [CFString: Any]) ?? [:]
         props[kCGImagePropertyOrientation] = 1
         var tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
@@ -266,6 +298,9 @@ final class ImageViewer: Viewer {
         }
         CGImageDestinationAddImage(dest, output, props as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { throw CropError.cantWrite(out) }
+        BlinkEdits(original: originalPath, originalSize: [originalSize.width, originalSize.height].map(Double.init),
+                   region: [inOriginal.minX, inOriginal.minY, inOriginal.width, inOriginal.height].map(Double.init),
+                   arrows: arrows.map { BlinkEdits.store($0, scale: scale, origin: px.origin) }).write(out)
         return out
     }
 
@@ -274,15 +309,21 @@ final class ImageViewer: Viewer {
     /// points at (800, 450), with the label "the boat" written along it." Arrow
     /// positions are in this file's pixels, from its top-left corner. Plain ASCII, since
     /// EXIF's UserComment can't hold anything else.
-    private func describe(original img: CGImage, region px: NSRect, arrows: [Arrow], scale: CGFloat) -> String {
-        var parts = ["Made in Blink from the original picture \(url.path) (\(img.width)x\(img.height) px)"]
-        if px.width < CGFloat(img.width) || px.height < CGFloat(img.height) {
-            parts[0] += ": cropped to \(Int(px.width))x\(Int(px.height)) px, taken from x \(Int(px.minX)), y \(Int(px.minY)) of the original."
+    private func describe(originalPath: String, originalSize: CGSize, region r: NSRect, arrows: [Arrow],
+                          scale: CGFloat, origin: CGPoint) -> String {
+        var parts = ["Made in Blink from the original picture \(originalPath) (\(Int(originalSize.width))x\(Int(originalSize.height)) px)"]
+        let px = NSRect(origin: origin, size: r.size)
+        if r.width < originalSize.width || r.height < originalSize.height {
+            parts[0] += ": cropped to \(Int(r.width))x\(Int(r.height)) px, taken from x \(Int(r.minX)), y \(Int(r.minY)) of the original."
         } else {
             parts[0] += ", same size as the original."
         }
         for (i, a) in arrows.enumerated() {
-            func pt(_ p: NSPoint) -> String { "(\(Int(p.x * scale - px.minX)), \(Int(p.y * scale - px.minY)))" }
+            func pt(_ p: NSPoint) -> String {
+                let x = p.x * scale - px.minX, y = p.y * scale - px.minY
+                let off = x < 0 || y < 0 || x > px.width || y > px.height
+                return "(\(Int(x)), \(Int(y)))" + (off ? ", off the edge of the picture" : "")
+            }
             var line = "Arrow \(i + 1) (\(a.colorName)) starts at \(pt(a.start)) and points at \(pt(a.end))"
             line += a.text.isEmpty ? "." : ", with the label \"\(a.text)\" written along it."
             parts.append(line)

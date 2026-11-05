@@ -7,8 +7,13 @@ import AppKit
 /// clears it.
 ///
 /// In arrow mode, each drag draws an arrow, coloured to stand out from what's under it.
-/// Typing straight afterwards labels the arrow at its tail; Return or Esc finishes the
-/// label. ⌘Z takes arrows back off.
+/// Typing straight afterwards labels it; Return or Esc finishes the label. ⌘Z takes
+/// arrows back off.
+///
+/// In either mode, clicking an arrow selects it: handles appear on its two ends, which
+/// can be dragged anywhere, even off the edge of the picture (an arrow coming in from
+/// outside). Dragging the arrow's body moves it whole. Typing changes the selected
+/// arrow's label, and Delete with an empty label removes the arrow.
 ///
 /// Coordinates are the picture's points (the canvas is flipped, so y runs down like the
 /// image's pixels).
@@ -21,11 +26,14 @@ final class CropOverlay: NSView {
     var onArrowsChange: ((Bool) -> Void)?
     /// Supplies a small copy of the picture once it has decoded.
     var sampler: (() -> ColorSampler?)?
-    /// The arrow whose label is being typed.
-    private var editing: Int?
+    /// The arrow whose label is being typed: the selected one, which shows end handles.
+    private var editing: Int? { didSet { needsDisplay = true } }
     private var pending: Arrow?
 
-    private enum Drag { case new(NSPoint), move(NSPoint, NSRect), handle(Int, NSRect), arrow(NSPoint) }
+    private enum Drag {
+        case new(NSPoint), move(NSPoint, NSRect), handle(Int, NSRect), arrow(NSPoint)
+        case arrowEnd(Int, isStart: Bool), arrowBody(Int, from: NSPoint, original: Arrow)
+    }
     private var drag: Drag?
 
     override var isFlipped: Bool { true }
@@ -53,6 +61,16 @@ final class CropOverlay: NSView {
             caret.lineWidth = max(2 / magnification, c.height * 0.08)
             a.letterColor.setStroke()
             caret.stroke()
+            // Handles on the two ends.
+            let r = handleSize * 1.4
+            for end in [a.start, a.end] {
+                let h = NSBezierPath(ovalIn: NSRect(x: end.x - r / 2, y: end.y - r / 2, width: r, height: r))
+                NSColor.white.setFill()
+                h.fill()
+                h.lineWidth = 1.5 / magnification
+                NSColor.controlAccentColor.setStroke()
+                h.stroke()
+            }
         }
         guard let sel = selection else { return }
         // Dim everything outside the selection.
@@ -107,12 +125,35 @@ final class CropOverlay: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let p = clamp(convert(event.locationInWindow, from: nil))
+        let raw = convert(event.locationInWindow, from: nil)
+        let p = clamp(raw)
+        // An end of an arrow (the selected one first), then any arrow's body.
+        let slop = handleSize * 1.4
+        let order = (editing.map { [$0] } ?? []) + arrows.indices.reversed().filter { $0 != editing }
+        for i in order where i < arrows.count {
+            for isStart in [true, false] {
+                let e = isStart ? arrows[i].start : arrows[i].end
+                if hypot(raw.x - e.x, raw.y - e.y) <= slop {
+                    editing = i
+                    snapshotArrows()
+                    drag = .arrowEnd(i, isStart: isStart)
+                    return
+                }
+            }
+        }
+        let reach = Arrow.lineWidth(bounds.size) + 5 / magnification
+        if let i = arrows.indices.reversed().first(where: { arrows[$0].distance(to: raw, picture: bounds.size) <= reach }) {
+            editing = i
+            snapshotArrows()
+            drag = .arrowBody(i, from: raw, original: arrows[i])
+            return
+        }
         if arrowMode {
             editing = nil
             drag = .arrow(p)
             return
         }
+        editing = nil
         if let sel = selection {
             let slop = 3 / magnification
             if let i = handleRects(sel).firstIndex(where: { $0.insetBy(dx: -slop, dy: -slop).contains(p) }) {
@@ -130,8 +171,15 @@ final class CropOverlay: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let p = clamp(convert(event.locationInWindow, from: nil))
+        let raw = convert(event.locationInWindow, from: nil)
+        let p = clamp(raw)
         switch drag {
+        case .arrowEnd(let i, let isStart):
+            // Not clamped: an end may go past the edge of the picture.
+            if isStart { arrows[i].start = raw } else { arrows[i].end = raw }
+        case .arrowBody(let i, let from, let original):
+            arrows[i].start = NSPoint(x: original.start.x + raw.x - from.x, y: original.start.y + raw.y - from.y)
+            arrows[i].end = NSPoint(x: original.end.x + raw.x - from.x, y: original.end.y + raw.y - from.y)
         case .arrow(let start):
             pending = makeArrow(start, p)
         case .new(let start):
@@ -156,6 +204,12 @@ final class CropOverlay: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        switch drag {
+        case .arrowEnd, .arrowBody:
+            drag = nil
+            return
+        default: break
+        }
         if case .arrow = drag {
             drag = nil
             if let a = pending, hypot(a.end.x - a.start.x, a.end.y - a.start.y) * magnification >= 10 {
@@ -194,6 +248,13 @@ final class CropOverlay: NSView {
         return a
     }
 
+    /// Makes the coming drag of an arrow one undo step.
+    private func snapshotArrows() {
+        let old = arrows
+        window?.undoManager?.registerUndo(withTarget: self) { $0.setArrows(old); $0.editing = nil }
+        window?.undoManager?.setActionName("Move Arrow")
+    }
+
     /// Changes the arrows undoably.
     private func setArrows(_ new: [Arrow]) {
         let old = arrows
@@ -204,15 +265,24 @@ final class CropOverlay: NSView {
 
     func clearArrows() { setArrows([]) }
 
+    /// Puts back arrows saved with the file (not an undoable change).
+    func restore(_ saved: [Arrow]) { arrows = saved }
+
     override func keyDown(with event: NSEvent) {
         guard let i = editing, i < arrows.count else { return super.keyDown(with: event) }
         switch event.keyCode {
         case 36, 76, 53:             // Return, Enter, Esc: done
             editing = nil
             needsDisplay = true
-        case 51:                     // Delete
+        case 51:                     // Delete: a letter, or the arrow once its label is empty
             var a = arrows
-            if !a[i].text.isEmpty { a[i].text.removeLast(); arrows = a }
+            if !a[i].text.isEmpty {
+                a[i].text.removeLast(); arrows = a
+            } else {
+                a.remove(at: i)
+                editing = nil
+                setArrows(a)
+            }
         default:
             guard let chars = event.characters, !chars.isEmpty,
                   chars.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {

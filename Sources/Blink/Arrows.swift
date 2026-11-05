@@ -35,6 +35,17 @@ struct Arrow {
         return NSPoint(x: mid.x + px * bow, y: mid.y + py * bow)
     }
 
+    /// How far a point is from the arrow's curve, for clicking on it.
+    func distance(to p: NSPoint, picture: NSSize) -> CGFloat {
+        let c = control(picture)
+        return (0...40).map { i -> CGFloat in
+            let t = CGFloat(i) / 40, u = 1 - t
+            let q = NSPoint(x: u * u * start.x + 2 * u * t * c.x + t * t * end.x,
+                            y: u * u * start.y + 2 * u * t * c.y + t * t * end.y)
+            return hypot(q.x - p.x, q.y - p.y)
+        }.min()!
+    }
+
     /// The curved shaft (to be stroked) and the head (to be filled), the head pointing
     /// along the curve's direction where it arrives.
     func shapes(width w: CGFloat, picture: NSSize) -> (shaft: NSBezierPath, head: NSBezierPath) {
@@ -103,8 +114,10 @@ struct Arrow {
             return NSPoint(x: u * u * start.x + 2 * u * t * c.x + t * t * base.x,
                            y: u * u * start.y + 2 * u * t * c.y + t * t * base.y)
         }
-        let reversed = base.x < start.x
-        if reversed { pts.reverse() }   // so the text runs left to right
+        if base.x < start.x { pts.reverse() }   // so the text runs left to right
+        // Only the part on the picture carries the label (an arrow can start off the edge).
+        let visible = pts.filter { NSRect(origin: .zero, size: picture).insetBy(dx: -1, dy: -1).contains($0) }
+        if visible.count >= 2 { pts = visible }
         var dist: [CGFloat] = [0]
         for k in 1..<pts.count { dist.append(dist[k - 1] + hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y)) }
         let total = dist.last!
