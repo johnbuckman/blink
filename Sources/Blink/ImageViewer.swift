@@ -182,6 +182,7 @@ final class ImageViewer: Viewer {
             .appendingPathComponent("\(video.deletingPathExtension().lastPathComponent)-\(stamp).jpg")
         source = nil
         videoFrame = (video, still)
+        scroll.backgroundColor = .black   // like the player around the video
         canvas.wantsLayer = true
         scroll.documentView = canvas
         // The window shows the video at its own size, so keep the still at the same scale.
