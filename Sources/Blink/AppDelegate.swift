@@ -5,8 +5,6 @@ import ServiceManagement
 /// against ~0.6 s for a cold launch. With no windows open it leaves the Dock and
 /// waits as a menu-bar icon.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Whether any file arrived during launch (a plain launch shows an Open panel).
-    private var openedSomething = false
     private var statusItem: NSStatusItem?
     /// Set by the menu-bar icon's Quit, the only way to actually quit (besides logout).
     private var reallyQuit = false
@@ -30,21 +28,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             enterMenuBarMode()
             return
         }
+        // A plain launch just comes forward, with its menus: File ▸ Open… (⌘O) opens a file.
         NSApp.activate(ignoringOtherApps: true)
-        // Finder's open event normally arrives before this point; give it one
-        // more turn of the run loop before deciding nobody asked for a file.
-        DispatchQueue.main.async { [self] in
-            if !openedSomething { showOpenPanel(nil) }
-            offerLoginItemOnce()
-        }
+        DispatchQueue.main.async { [self] in offerLoginItemOnce() }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         open(urls)
     }
 
+    /// Clicking Blink's Dock icon (or launching it again) brings it forward with its menus,
+    /// leaving the menu bar if it was waiting there. No Open panel: that's File ▸ Open….
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { showOpenPanel(nil) }
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+        NSApp.activate(ignoringOtherApps: true)
         return true
     }
 
@@ -74,7 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func open(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        openedSomething = true
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
