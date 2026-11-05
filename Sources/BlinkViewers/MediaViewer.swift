@@ -17,6 +17,7 @@ import BlinkShared
     private(set) var grabbedSeconds: Double = 0
     private(set) var grabbedFrame: Int = 0
     private var quitObserver: NSObjectProtocol?
+    private var pauseWatch: NSKeyValueObservation?
 
     var view: NSView { playerView }
     var preferredSize: NSSize { audioOnly ? NSSize(width: 480, height: 60) : videoSize ?? NSSize(width: 960, height: 540) }
@@ -38,6 +39,15 @@ import BlinkShared
         playerView.allowsPictureInPicturePlayback = !audioOnly
         if let resume = Self.resumePoints[url.path] {
             player.seek(to: CMTime(seconds: resume, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        // Tell the window when playback pauses (Space, the pause button, the end), so it can
+        // put up the still for marking up.
+        pauseWatch = player.observe(\.timeControlStatus, options: [.old, .new]) { [weak self] p, change in
+            guard change.oldValue == .playing, p.timeControlStatus == .paused else { return }
+            DispatchQueue.main.async {
+                guard let view = self?.playerView else { return }
+                NotificationCenter.default.post(name: Notification.Name("BlinkVideoDidPause"), object: view)
+            }
         }
         // Quitting Blink (or logging out) doesn't close windows first, so save then too.
         quitObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
@@ -70,6 +80,7 @@ import BlinkShared
     func tearDown() {
         player.pause()
         rememberPosition()
+        pauseWatch = nil
         if let quitObserver { NotificationCenter.default.removeObserver(quitObserver) }
         playerView.player = nil
     }

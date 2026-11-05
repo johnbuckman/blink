@@ -27,6 +27,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     private weak var titleHolder: NSView?
     private var flagsMonitor: Any?
     private var keyMonitor: Any?
+    private var pauseObserver: NSObjectProtocol?
     private var showingHints = false
     private weak var cropControl: NSSegmentedControl?
     private weak var saveControl: NSSegmentedControl?
@@ -177,6 +178,14 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         // take Space once clicked): Space always plays or pauses; when paused, ← → step 1 s,
         // with ⇧ 0.1 s and with ⌥ 10 s.
         if viewer.canMarkUpFrames {
+            // Pausing puts up the still with Arrow chosen, ready to mark up.
+            pauseObserver = NotificationCenter.default.addObserver(forName: Notification.Name("BlinkVideoDidPause"),
+                                                                   object: viewer.view, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.markup == nil else { return }
+                    self.setTool(arrow: true, box: false)
+                }
+            }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self, self.window?.isKeyWindow == true else { return event }
                 return self.videoKey(event) ? nil : event
@@ -342,10 +351,14 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         iv.view.removeFromSuperview()
         markup = nil
         viewer.showControls(true)
-        // Arrow or Box stays chosen, for the next still.
         cropControl?.isEnabled = true
         saveControl?.isEnabled = false
         window?.makeFirstResponder(viewer.view)
+        if play {
+            // Back to watching: the tools are put down (pausing picks Arrow again).
+            arrowControl?.setSelected(false, forSegment: 0)
+            boxControl?.setSelected(false, forSegment: 0)
+        }
         updateCatcher()
         if play { viewer.resumePlaying() }
     }
@@ -381,7 +394,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         do {
             guard let out = try tools.crop() else { NSSound.beep(); return }
             let fromVideo = markup != nil
-            endMarkup()
+            endMarkup(play: fromVideo)        // a still saved from a video: carry on watching
             Self.saved(out, open: !fromVideo)
         } catch {
             guard let window else { return }
@@ -416,7 +429,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         do {
             guard let out = try tools.saveWithArrows() else { NSSound.beep(); return }
             let fromVideo = markup != nil
-            endMarkup()
+            endMarkup(play: fromVideo)        // a still saved from a video: carry on watching
             Self.saved(out, open: !fromVideo)
         } catch {
             guard let window else { return }
@@ -469,6 +482,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         catcher?.removeFromSuperview()
         if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) }
         viewer.tearDown()
         Self.open.removeAll { $0 === self }
         if Self.open.isEmpty { (NSApp.delegate as? AppDelegate)?.lastWindowClosed() }
