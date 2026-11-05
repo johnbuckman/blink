@@ -2,7 +2,7 @@
 
 A tiny macOS file viewer that opens instantly. One window per file, zoom in / out / fit / actual size, and an "Edit in …" button that hands the file to the app you edit it in.
 
-It's built for **annotating pictures and video stills for AI models to read**. Crop, then point at things with labelled arrows and boxes, on a picture or on a paused video frame. Each saved file says in plain words what was marked, where each mark points, and exactly which file (and which video frame and timecode) it came from.
+It's built for **annotating pictures and video stills for AI models to read**. Crop, then point at things with labelled arrows and boxes, on a picture or on a paused video frame. Each saved image carries a plain-words note in its metadata (EXIF, TIFF, IPTC and PNG description fields), saying what was marked, where each mark points, and exactly which file (and which video frame and timecode) it came from.
 
 | Opens | How |
 |---|---|
