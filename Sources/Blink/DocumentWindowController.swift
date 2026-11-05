@@ -133,6 +133,16 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             edit.sizeToFit()
             controls.insert(edit, at: 0)
         }
+        // Pictures and PDFs can go to Preview too, for what Blink doesn't do (rotate, export, print…).
+        if kind == .image || kind == .pdf {
+            let preview = NSSegmentedControl(labels: ["Preview"], trackingMode: .momentary,
+                                             target: self, action: #selector(openInPreview(_:)))
+            preview.setToolTip("Open this file in Preview", forSegment: 0)
+            preview.controlSize = .small
+            preview.segmentStyle = .separated
+            preview.sizeToFit()
+            controls.insert(preview, at: 0)
+        }
         let gap: CGFloat = 10
         let width = controls.reduce(0) { $0 + $1.frame.width } + gap * CGFloat(controls.count - 1)
         // A little taller than the buttons, with them raised, so they sit inside the
