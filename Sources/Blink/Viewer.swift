@@ -26,7 +26,7 @@ extension Viewer {
 }
 
 enum FileKind {
-    case image, pdf, csv, email, spreadsheet, gpx, video, audio, text, markdown
+    case image, pdf, csv, xlsx, email, spreadsheet, gpx, video, audio, text, markdown
 
     /// Decided from the extension first; files with no (or an unknown) extension
     /// are sniffed, which is how John's extensionless `…_GPX` downloads open.
@@ -37,7 +37,8 @@ enum FileKind {
         case "pdf": return .pdf
         case "csv", "tsv": return .csv
         case "eml", "emlx": return .email
-        case "xlsx", "xls", "numbers", "docx", "doc", "pptx", "key", "pages": return .spreadsheet
+        case "xlsx": return .xlsx
+        case "xls", "numbers", "docx", "doc", "pptx", "key", "pages": return .spreadsheet
         case "gpx": return .gpx
         case "mp4", "mov", "m4v": return .video
         case "m4a", "mp3", "wav", "aac", "aiff", "aif", "flac": return .audio
@@ -69,6 +70,10 @@ enum FileKind {
         switch self {
         case .image: return ImageViewer(url: url)
         case .csv: return CSVViewer(url: url)
+        case .xlsx:
+            // Our own reader gives a zoomable grid; Quick Look is the fallback for odd files.
+            if let wb = XLSXWorkbook(url: url) { return CSVViewer(workbook: wb) }
+            return PluginViewer.make("BlinkQuickLookViewer", url)
         case .text: return TextViewer(url: url)
         case .pdf: return PluginViewer.make("BlinkPDFViewer", url)
         case .email: return PluginViewer.make("BlinkEmailViewer", url)

@@ -8,7 +8,8 @@ A tiny macOS file viewer that opens instantly. One window per file, zoom in / ou
 | pdf | PDFKit, continuous scroll |
 | csv / tsv | Grid with a header row and row numbers; quoted fields, `,` `;` or tab detected |
 | eml / emlx | Headers, HTML or text body, inline images, attachments (click to open). Remote images are blocked until you click "Load Remote Images"; page scripts never run. |
-| xlsx and other Office files | Apple's Quick Look renderer |
+| xlsx | Cell values in a grid with Excel's column letters and row numbers, one tab per sheet (read directly, no Excel needed) |
+| xls, docx, pptx, numbers, pages, key | Apple's Quick Look renderer |
 | gpx | Track, waypoints, distance, climb and time on OpenStreetMap tiles, or OpenTopoMap (contours, hillshade). Files with no extension are recognised by content. |
 | mp4, mov, m4a, mp3 | AVKit player |
 | md | Two columns: source on the left, GitHub-flavoured rendering (cmark-gfm) on the right. They scroll together and refresh when the file changes. |
@@ -19,7 +20,7 @@ Keys: ⌘+ / ⌘= zoom in, ⌘− zoom out, ⌘0 fit, ⌘1 actual size, ⇧⌘R 
 ## Why it's fast
 
 * AppKit with no nib, no NSDocument, no state restoration.
-* The executable links only AppKit and ImageIO. PDFKit, WebKit, MapKit, AVKit and Quick Look live in `libBlinkViewers.dylib`, loaded the first time one of those files opens.
+* The executable links only AppKit and ImageIO (and reads xlsx itself). PDFKit, WebKit, MapKit, AVKit and Quick Look live in `libBlinkViewers.dylib`, loaded the first time one of those files opens.
 * It stays running. With no windows open it leaves the Dock and waits as a menu-bar icon (Open…, Open at Login, Quit), so later files open in ~0.2 s instead of a cold launch.
 
 Measured on an M4 MacBook Air, macOS 26 (time from `open` to the window on screen):
@@ -35,9 +36,9 @@ Measured on an M4 MacBook Air, macOS 26 (time from `open` to the window on scree
 ## Build
 
 ```bash
-./build.sh                                   # build, sign, install to /Applications/AI Apps
-NOTARIZE=1 ./build.sh                        # also notarize + staple
-swift tools/set-defaults.swift "/Applications/AI Apps/Blink.app"   # make Blink the default viewer
+./build.sh                                   # build, sign (first Developer ID in the keychain), install
+NOTARIZE=1 BLINK_NOTARY_PROFILE=<profile> ./build.sh   # also notarize + staple
+swift tools/set-defaults.swift /Applications/Blink.app   # make Blink the default viewer
 ```
 
 Map tiles © OpenStreetMap contributors; topo style © OpenTopoMap (CC-BY-SA). Tiles are cached in `~/Library/Caches/Blink/Tiles`. Requests identify Blink in their User-Agent, per the OSM tile policy.

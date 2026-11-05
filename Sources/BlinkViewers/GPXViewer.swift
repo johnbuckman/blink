@@ -275,7 +275,7 @@ final class OSMTileOverlay: MKTileOverlay {
         if let a = times.min(), let b = times.max(), b > a {
             let f = DateComponentsFormatter()
             f.allowedUnits = [.hour, .minute]
-            f.unitsStyle = .abbreviated
+            f.unitsStyle = .short
             parts.append(f.string(from: a, to: b) ?? "")
         }
         if !gpx.waypoints.isEmpty { parts.append("\(gpx.waypoints.count) waypoints") }

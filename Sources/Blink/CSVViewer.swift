@@ -38,47 +38,114 @@ func parseCSV(_ text: String) -> [[String]] {
     return rows
 }
 
+/// A grid for CSV files and for .xlsx sheets. Spreadsheets get Excel's column letters and
+/// row numbers, plus sheet tabs along the bottom when there is more than one sheet.
 final class CSVViewer: NSObject, Viewer, NSTableViewDataSource, NSTableViewDelegate {
+    private let container = NSView()
     private let scroll = NSScrollView()
     private let table = NSTableView()
     private var header: [String] = []
     private var rows: [[String]] = []
     private var zoom = FontZoom()
+    private var workbook: XLSXWorkbook?
 
-    var view: NSView { scroll }
+    var view: NSView { container }
     var preferredContentSize: NSSize? {
         let w = table.tableColumns.reduce(0) { $0 + $1.width + table.intercellSpacing.width } + 20
         let h = CGFloat(min(rows.count, 40) + 1) * (table.rowHeight + table.intercellSpacing.height) + 30
-        return NSSize(width: min(max(w, 400), 1400), height: max(h, 200))
+        return NSSize(width: min(max(w, 500), 1400), height: max(h, 240) + (workbook.map { $0.sheets.count > 1 ? 30 : 0 } ?? 0))
     }
 
     init(url: URL) {
         super.init()
+        setUp(tabs: nil)
         var all = parseCSV(readText(url))
         // Treat the first row as a header unless the file has only one row.
+        var header: [String] = []
         if all.count > 1 { header = all.removeFirst() }
-        rows = all
-        let columns = max(header.count, rows.map(\.count).max() ?? 0)
+        load(header: header, rows: all)
+    }
 
+    init(workbook: XLSXWorkbook) {
+        self.workbook = workbook
+        super.init()
+        var tabs: NSSegmentedControl?
+        if workbook.sheets.count > 1 {
+            let t = NSSegmentedControl(labels: workbook.sheets.map(\.name), trackingMode: .selectOne,
+                                       target: nil, action: nil)
+            t.target = self
+            t.action = #selector(sheetChosen(_:))
+            t.selectedSegment = 0
+            t.controlSize = .small
+            tabs = t
+        }
+        setUp(tabs: tabs)
+        showSheet(0)
+    }
+
+    private func setUp(tabs: NSSegmentedControl?) {
         table.usesAlternatingRowBackgroundColors = true
         table.gridStyleMask = [.solidVerticalGridLineMask]
         table.columnAutoresizingStyle = .noColumnAutoresizing
         table.allowsColumnReordering = false
         table.allowsMultipleSelection = true
         table.style = .plain
-
-        // Row-number column, then one per field.
-        addColumn(id: "#", title: "")
-        for c in 0..<columns {
-            addColumn(id: "\(c)", title: c < header.count ? header[c] : "Column \(c + 1)")
-        }
         table.dataSource = self
         table.delegate = self
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
+
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(scroll)
+        var constraints = [
+            scroll.topAnchor.constraint(equalTo: container.topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ]
+        if let tabs {
+            tabs.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(tabs)
+            constraints += [
+                tabs.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 5),
+                tabs.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+                tabs.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -5),
+            ]
+        } else {
+            constraints.append(scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor))
+        }
+        NSLayoutConstraint.activate(constraints)
+    }
+
+    @objc private func sheetChosen(_ sender: NSSegmentedControl) { showSheet(sender.selectedSegment) }
+
+    private func showSheet(_ i: Int) {
+        guard let workbook, i < workbook.sheets.count else { return }
+        let rows = workbook.sheets[i].rows
+        let width = rows.map(\.count).max() ?? 0
+        load(header: (0..<width).map(Self.columnName), rows: rows)
+    }
+
+    /// 0 → "A", 26 → "AA"
+    static func columnName(_ i: Int) -> String {
+        var n = i + 1, s = ""
+        while n > 0 { n -= 1; s = String(UnicodeScalar(65 + n % 26)!) + s; n /= 26 }
+        return s
+    }
+
+    private func load(header: [String], rows: [[String]]) {
+        self.header = header
+        self.rows = rows
+        for col in table.tableColumns { table.removeTableColumn(col) }
+        let columns = max(header.count, rows.map(\.count).max() ?? 0)
+        // Row-number column, then one per field.
+        addColumn(id: "#", title: "")
+        for c in 0..<columns {
+            addColumn(id: "\(c)", title: c < header.count ? header[c] : "Column \(c + 1)")
+        }
         applyZoom()
+        table.scrollRowToVisible(0)
     }
 
     private func addColumn(id: String, title: String) {

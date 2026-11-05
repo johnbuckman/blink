@@ -9,9 +9,11 @@ APP_NAME="Blink"
 EXE="Blink"
 BUNDLE_ID="com.decentespresso.blink"
 VERSION="1.0.0"
-DEST="/Applications/AI Apps"
-IDENTITY="Developer ID Application: Vid Tadel (XLS3XF57J8)"
-NOTARY_PROFILE="bping-notary"
+DEST="${BLINK_DEST:-$( [ -d "/Applications/AI Apps" ] && echo "/Applications/AI Apps" || echo /Applications )}"
+# The first Developer ID in the keychain (or set BLINK_IDENTITY); ad-hoc signing if there is none.
+IDENTITY="${BLINK_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
+IDENTITY="${IDENTITY:--}"
+NOTARY_PROFILE="${BLINK_NOTARY_PROFILE:-}"   # a `notarytool store-credentials` profile name
 
 echo "== Building =="
 swift build -c release --arch arm64
@@ -88,16 +90,20 @@ PLIST
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
 echo "== Signing =="
-codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP/Contents/Frameworks/libBlinkViewers.dylib"
-codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+codesign --force --options runtime --timestamp=$( [ "$IDENTITY" = - ] && echo none || echo http://timestamp.apple.com/ts01 ) --sign "$IDENTITY" "$APP/Contents/Frameworks/libBlinkViewers.dylib"
+codesign --force --options runtime --timestamp=$( [ "$IDENTITY" = - ] && echo none || echo http://timestamp.apple.com/ts01 ) --sign "$IDENTITY" "$APP"
 codesign --verify --strict "$APP"
 
 if [ -n "$NOTARIZE" ]; then
+    [ -n "$NOTARY_PROFILE" ] || { echo "set BLINK_NOTARY_PROFILE"; exit 1; }
     echo "== Notarizing =="
     ditto -c -k --keepParent "$APP" Blink.zip
     xcrun notarytool submit Blink.zip --keychain-profile "$NOTARY_PROFILE" --wait
     xcrun stapler staple "$APP"
     rm Blink.zip
+    # The download: the stapled app, zipped for a GitHub release.
+    ditto -c -k --keepParent "$APP" "Blink-$VERSION.zip"
+    echo "Release zip: Blink-$VERSION.zip"
 fi
 
 echo "== Installing to $DEST =="
