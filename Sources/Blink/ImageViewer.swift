@@ -82,10 +82,15 @@ final class ImageViewer: Viewer {
     /// then shows the original's pixels (the kept part) with the arrows still editable,
     /// and Save updates this file.
     private var edits: BlinkEdits?
+    /// Set when this is a still from a video, paused on to mark it up.
+    private var videoFrame: (video: URL, frame: VideoFrame)?
     private var overlay: CropOverlay?
     /// Tells the window to enable or disable its Crop button.
     var onCropSelectionChange: ((Bool) -> Void)? { didSet { overlay?.onChange = onCropSelectionChange } }
     var onArrowsChange: ((Bool) -> Void)? { didSet { overlay?.onArrowsChange = onArrowsChange } }
+    var onPlayKey: (() -> Void)? { didSet { overlay?.onPlayKey = onPlayKey } }
+    /// Takes the keyboard, so typing labels arrows straight away.
+    func focusMarkup() { overlay.map { $0.window?.makeFirstResponder($0) } }
     private var sampler: ColorSampler?
     private var pageLayers: [CALayer] = []
     private let decodeQueue = DispatchQueue(label: "blink.decode", qos: .userInitiated)
@@ -158,16 +163,41 @@ final class ImageViewer: Viewer {
             }
         }
         if pageLayers.count == 1 {
-            let o = CropOverlay(frame: canvas.bounds)
-            o.autoresizingMask = [.width, .height]
-            canvas.addSubview(o)
-            o.sampler = { [weak self] in self?.colorSampler() }
-            o.clipsToBounds = true    // an arrow running off the edge is cut at the edge
-            overlay = o
+            addOverlay()
             if let e = edits {
-                o.restore(e.restoredArrows(pointsPerPixel: first.width / CGFloat(e.originalSize[0])))
+                overlay?.restore(e.restoredArrows(pointsPerPixel: first.width / CGFloat(e.originalSize[0])))
             }
         }
+    }
+
+    /// A still from a video, to mark up. It saves next to the video, named after it and
+    /// the moment: "clip-1m05.2s-arrows-1.jpg".
+    init(frame still: VideoFrame, video: URL) {
+        let image = still.image
+        let total = max(still.seconds, 0)
+        let stamp = String(format: "%dm%04.1fs", Int(total) / 60, total.truncatingRemainder(dividingBy: 60))
+        url = video.deletingLastPathComponent()
+            .appendingPathComponent("\(video.deletingPathExtension().lastPathComponent)-\(stamp).jpg")
+        source = nil
+        videoFrame = (video, still)
+        canvas.wantsLayer = true
+        scroll.documentView = canvas
+        // The window shows the video at its own size, so keep the still at the same scale.
+        let size = NSSize(width: image.width, height: image.height)
+        naturalSize = size
+        canvas.frame = NSRect(origin: .zero, size: size)
+        pageLayers = [makeLayer(canvas.frame)]
+        pageLayers[0].contents = image
+        addOverlay()
+    }
+
+    private func addOverlay() {
+        let o = CropOverlay(frame: canvas.bounds)
+        o.autoresizingMask = [.width, .height]
+        canvas.addSubview(o)
+        o.sampler = { [weak self] in self?.colorSampler() }
+        o.clipsToBounds = true    // an arrow running off the edge is cut at the edge
+        overlay = o
     }
 
     // MARK: Crop
@@ -250,7 +280,8 @@ final class ImageViewer: Viewer {
             if let made = ctx.makeImage() { output = made }
         }
 
-        var type = (source.flatMap { CGImageSourceGetType($0) } as String?) ?? UTType.png.identifier
+        var type = (source.flatMap { CGImageSourceGetType($0) } as String?)
+            ?? UTType(filenameExtension: url.pathExtension)?.identifier ?? UTType.png.identifier
         var ext = url.pathExtension.isEmpty ? (UTType(type)?.preferredFilenameExtension ?? "png") : url.pathExtension
         let writable = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
         if !writable.contains(type) { type = UTType.png.identifier; ext = "png" }
@@ -302,9 +333,11 @@ final class ImageViewer: Viewer {
         }
         CGImageDestinationAddImage(dest, output, props as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { throw CropError.cantWrite(out) }
-        BlinkEdits(original: originalPath, originalSize: [originalSize.width, originalSize.height].map(Double.init),
+        if videoFrame == nil {
+            BlinkEdits(original: originalPath, originalSize: [originalSize.width, originalSize.height].map(Double.init),
                    region: [inOriginal.minX, inOriginal.minY, inOriginal.width, inOriginal.height].map(Double.init),
                    arrows: arrows.map { BlinkEdits.store($0, scale: scale, origin: px.origin) }).write(out)
+        }
         return out
     }
 
@@ -316,6 +349,18 @@ final class ImageViewer: Viewer {
     private func describe(originalPath: String, originalSize: CGSize, region r: NSRect, arrows: [Arrow],
                           scale: CGFloat, origin: CGPoint) -> String {
         var parts = ["Made in Blink from the original picture \(originalPath) (\(Int(originalSize.width))x\(Int(originalSize.height)) px)"]
+        if let v = videoFrame {
+            let s = v.frame.seconds
+            var at = String(format: "%d:%06.3f (%.3f seconds from the start)", Int(s) / 60, s.truncatingRemainder(dividingBy: 60), s)
+            if v.frame.frameRate > 0 {
+                let fps = v.frame.frameRate
+                let whole = Int(fps.rounded())
+                let tc = String(format: "%02d:%02d:%02d:%02d", Int(s) / 3600, Int(s) / 60 % 60, Int(s) % 60, v.frame.frame % max(whole, 1))
+                at += String(format: ", frame %d at %@ fps, timecode %@", v.frame.frame,
+                             fps == fps.rounded() ? String(whole) : String(format: "%.3f", fps), tc)
+            }
+            parts = ["Made in Blink from a still of the video \(v.video.path) at \(at). The still is \(Int(originalSize.width))x\(Int(originalSize.height)) px"]
+        }
         let px = NSRect(origin: origin, size: r.size)
         if r.width < originalSize.width || r.height < originalSize.height {
             parts[0] += ": cropped to \(Int(r.width))x\(Int(r.height)) px, taken from x \(Int(r.minX)), y \(Int(r.minY)) of the original."

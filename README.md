@@ -12,7 +12,7 @@ A tiny macOS file viewer that opens instantly. One window per file, zoom in / ou
 | rtf, doc, docx | AppKit's own importers: fonts, styles, tables and pictures on a white page |
 | xls, pptx, numbers, pages, key | Apple's Quick Look renderer |
 | gpx | Track, waypoints, distance, climb and time on OpenStreetMap tiles, or OpenTopoMap (contours, hillshade). Files with no extension are recognised by content. |
-| mp4, mov, m4v; m4a, mp3, wav, aac, aiff, flac, caf, m4b, ogg, opus | AVKit player |
+| mp4, mov, m4v; m4a, mp3, wav, aac, aiff, flac, caf, m4b, ogg, opus | AVKit player. Anything a minute or longer reopens where you left off. |
 | md | Two columns: source on the left, GitHub-flavoured rendering (cmark-gfm) on the right. They scroll together and refresh when the file changes. |
 | txt, tcl, adp, js and anything else | Plain text |
 
@@ -25,6 +25,7 @@ Keys: ⌘+ / ⌘= zoom in, ⌘− zoom out, ⌘0 fit, ⌘1 actual size, ⌘E edi
 * **Boxes:** turn on **Box** (⇧⌘B), then drag to draw a box. It works like an arrow (its own colour, see-through, ⌘Z), but its label goes over its top edge. Drag a corner to resize it, or its edge to move it.
 * **Changing arrows:** click an arrow to select it: handles appear on both ends. Drag an end anywhere, even past the edge of the picture, for an arrow that comes in from outside. Drag the arrow's body to move it whole. Typing edits the selected arrow's label, and Delete on an empty label removes the arrow.
 * **Editable later:** a saved file remembers how it was made: the original's path, the part kept and each arrow, stored in an extended attribute. Reopen it while the original is still there, and the arrows and labels can be changed again; Save then updates that same file.
+* **Videos:** while watching, Arrow, Box or Crop pauses on the current frame and hides the player controls, so the frame can be marked up. Save writes it next to the video (`clip-1m05.2s-arrows-1.jpg`), recording exactly which frame it is (time, frame number, frame rate and timecode). Space carries on playing.
 * **After saving:** the new file's full path is copied to the clipboard, ready to paste into a chat or a terminal.
 * **For AI readers:** every saved file says in plain words what was done, including the original's full path so the two can be compared. For example: "Made in Blink from the original picture /Users/me/Pictures/harbour-sunset.jpg (3000x2000 px): cropped to 1720x1265 px, taken from x 34, y 307 of the original. Arrow 1 (green) starts at (202, 126) and points at (783, 986), with the label "the boat" written along it." This text goes in the EXIF UserComment, TIFF ImageDescription, IPTC Caption and PNG Description fields.
 

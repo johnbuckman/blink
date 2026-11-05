@@ -16,6 +16,21 @@ import AppKit
     func actualSize()
     func didAppear()
     func tearDown()
+    /// Video only: whether the picture tools can mark up its frames.
+    @objc optional var canMarkUpFrames: Bool { get }
+    /// Video only: pauses, then returns the frame on screen (upright, full size).
+    @objc optional func pauseAndGrabFrame() -> CGImage?
+    /// Video only: where playback is, in seconds.
+    @objc optional var currentSeconds: Double { get }
+    /// Video only: carries on playing.
+    @objc optional func play()
+    /// Video only: shows or hides the player's controls (hidden while a frame is marked up).
+    @objc optional func showControls(_ show: Bool)
+    /// Video only: the frame pauseAndGrabFrame returned: its exact time, its number
+    /// (from 0) and the video's frame rate.
+    @objc optional var grabbedSeconds: Double { get }
+    @objc optional var grabbedFrame: Int { get }
+    @objc optional var frameRate: Double { get }
 }
 
 /// Opens a file in Blink (a new window), from either image.

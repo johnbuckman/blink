@@ -27,6 +27,8 @@ final class CropOverlay: NSView {
     var boxMode = false { didSet { editing = nil; window?.invalidateCursorRects(for: self) } }
     private(set) var arrows: [Arrow] = [] { didSet { needsDisplay = true; onArrowsChange?(!arrows.isEmpty) } }
     var onArrowsChange: ((Bool) -> Void)?
+    /// Space when no label is being typed (marking up a video still: go back to playing).
+    var onPlayKey: (() -> Void)?
     /// Supplies a small copy of the picture once it has decoded.
     var sampler: (() -> ColorSampler?)?
     /// The arrow whose label is being typed: the selected one, which shows end handles.
@@ -290,7 +292,10 @@ final class CropOverlay: NSView {
     func restore(_ saved: [Arrow]) { arrows = saved }
 
     override func keyDown(with event: NSEvent) {
-        guard let i = editing, i < arrows.count else { return super.keyDown(with: event) }
+        guard let i = editing, i < arrows.count else {
+            if event.keyCode == 49, let play = onPlayKey { return play() }
+            return super.keyDown(with: event)
+        }
         switch event.keyCode {
         case 36, 76, 53:             // Return, Enter, Esc: done
             editing = nil

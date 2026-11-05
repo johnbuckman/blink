@@ -22,6 +22,12 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     /// The app the Edit button opens this file in; nil = no Edit button.
     let editor: Editor?
     private weak var arrowControl: NSSegmentedControl?
+    private weak var cropControl: NSSegmentedControl?
+    private weak var saveControl: NSSegmentedControl?
+    /// A paused video's frame being marked up, laid over the player.
+    private var markup: ImageViewer?
+    /// Where the picture tools act: the still being marked up, else the window's own viewer.
+    private var tools: Viewer { markup ?? viewer }
     private weak var boxControl: NSSegmentedControl?
 
     static func open(_ url: URL) {
@@ -72,7 +78,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         control.isEnabled = viewer.supportsZoom
         control.sizeToFit()
         var controls: [NSControl] = [control]
-        if viewer.canCrop {
+        if viewer.canCrop || viewer.canMarkUpFrames {
             let crop = NSSegmentedControl(labels: ["Crop"], trackingMode: .momentary,
                                           target: self, action: #selector(cropImage(_:)))
             crop.setToolTip("Drag on the picture to choose an area, then Crop saves it as a new file (⌘K)", forSegment: 0)
@@ -80,7 +86,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             crop.segmentStyle = .separated
             crop.isEnabled = false
             crop.sizeToFit()
-            (viewer as? ImageViewer)?.onCropSelectionChange = { [weak crop] has in crop?.isEnabled = has }
+            crop.isEnabled = viewer.canMarkUpFrames    // on a video, Crop first pauses on the frame
+            cropControl = crop
             controls.insert(crop, at: 0)
 
             let save = NSSegmentedControl(labels: ["Save"], trackingMode: .momentary,
@@ -90,7 +97,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             save.segmentStyle = .separated
             save.isEnabled = false
             save.sizeToFit()
-            (viewer as? ImageViewer)?.onArrowsChange = { [weak save] has in save?.isEnabled = has }
+            saveControl = save
             controls.insert(save, at: 1)
 
             let arrow = NSSegmentedControl(labels: ["Arrow"], trackingMode: .selectAny,
@@ -111,6 +118,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             boxControl = box
             controls.insert(box, at: 1)
         }
+        if let iv = viewer as? ImageViewer { wire(iv) }
         if let editor {
             let edit = NSSegmentedControl(labels: ["Edit in \(editor.name)"], trackingMode: .momentary,
                                           target: self, action: #selector(editFile(_:)))
@@ -170,17 +178,17 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     // MARK: Zoom
 
-    @objc func blinkZoomIn(_ sender: Any?) { viewer.zoomIn() }
-    @objc func blinkZoomOut(_ sender: Any?) { viewer.zoomOut() }
-    @objc func blinkZoomToFit(_ sender: Any?) { viewer.zoomToFit() }
-    @objc func blinkActualSize(_ sender: Any?) { viewer.actualSize() }
+    @objc func blinkZoomIn(_ sender: Any?) { tools.zoomIn() }
+    @objc func blinkZoomOut(_ sender: Any?) { tools.zoomOut() }
+    @objc func blinkZoomToFit(_ sender: Any?) { tools.zoomToFit() }
+    @objc func blinkActualSize(_ sender: Any?) { tools.actualSize() }
 
     @objc func zoomControl(_ sender: NSSegmentedControl) {
         switch sender.selectedSegment {
-        case 0: viewer.zoomOut()
-        case 1: viewer.zoomIn()
-        case 2: viewer.zoomToFit()
-        default: viewer.actualSize()
+        case 0: tools.zoomOut()
+        case 1: tools.zoomIn()
+        case 2: tools.zoomToFit()
+        default: tools.actualSize()
         }
     }
 
@@ -190,17 +198,65 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     /// After a crop or save: the new file's full path goes on the clipboard (to paste into
     /// a chat or a terminal), and the file opens in its own window.
-    private static func saved(_ url: URL) {
+    /// A still from a video isn't opened: you're watching, so the video stays in front.
+    private static func saved(_ url: URL, open show: Bool = true) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.path, forType: .string)
-        open(url)
+        if show { open(url) }
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
     }
 
+    /// Points the Crop and Save buttons at a picture's selection and marks.
+    private func wire(_ iv: ImageViewer) {
+        iv.onCropSelectionChange = { [weak self] has in self?.cropControl?.isEnabled = has || (self?.markup == nil && self?.viewer.canMarkUpFrames == true) }
+        iv.onArrowsChange = { [weak self] has in self?.saveControl?.isEnabled = has }
+    }
+
+    // MARK: Marking up a video frame
+
+    /// Pauses the video and lays its current frame over the player, ready for the
+    /// picture tools. Returns false if there's no frame to mark up.
+    @discardableResult
+    private func beginMarkup() -> Bool {
+        if markup != nil { return true }
+        guard viewer.canMarkUpFrames, let content = window?.contentView,
+              let frame = viewer.pauseAndGrabFrame() else { return false }
+        viewer.showControls(false)
+        let iv = ImageViewer(frame: frame, video: url)
+        markup = iv
+        wire(iv)
+        cropControl?.isEnabled = false
+        iv.onPlayKey = { [weak self] in self?.endMarkup(play: true) }
+        iv.view.frame = content.bounds
+        iv.view.autoresizingMask = [.width, .height]
+        content.addSubview(iv.view)
+        iv.didAppear()
+        iv.focusMarkup()
+        return true
+    }
+
+    /// Back to the video: Space, or after Save or Crop.
+    private func endMarkup(play: Bool = false) {
+        guard let iv = markup else { return }
+        iv.tearDown()
+        iv.view.removeFromSuperview()
+        markup = nil
+        viewer.showControls(true)
+        arrowControl?.setSelected(false, forSegment: 0)
+        boxControl?.setSelected(false, forSegment: 0)
+        cropControl?.isEnabled = true
+        saveControl?.isEnabled = false
+        window?.makeFirstResponder(viewer.view)
+        if play { viewer.resumePlaying() }
+    }
+
     @objc func cropImage(_ sender: Any?) {
+        if viewer.canMarkUpFrames, markup == nil { beginMarkup(); return }   // first, pause to draw the area
         do {
-            guard let out = try viewer.crop() else { NSSound.beep(); return }
-            Self.saved(out)
+            guard let out = try tools.crop() else { NSSound.beep(); return }
+            let fromVideo = markup != nil
+            endMarkup()
+            Self.saved(out, open: !fromVideo)
         } catch {
             guard let window else { return }
             NSAlert(error: error).beginSheetModal(for: window)
@@ -215,21 +271,26 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         setTool(arrow: false, box: sender.isSelected(forSegment: 0))
     }
 
-    @objc func toggleArrows(_ sender: Any?) { setTool(arrow: !viewer.arrowMode, box: false) }
-    @objc func toggleBoxes(_ sender: Any?) { setTool(arrow: false, box: !viewer.boxMode) }
+    @objc func toggleArrows(_ sender: Any?) { setTool(arrow: !tools.arrowMode, box: false) }
+    @objc func toggleBoxes(_ sender: Any?) { setTool(arrow: false, box: !tools.boxMode) }
 
     /// Arrow and Box are one-or-the-other.
     private func setTool(arrow: Bool, box: Bool) {
-        viewer.arrowMode = arrow
-        viewer.boxMode = box
+        // On a video, choosing a tool pauses on the frame to mark it up.
+        if (arrow || box), viewer.canMarkUpFrames, !beginMarkup() { NSSound.beep(); return }
+        tools.arrowMode = arrow
+        tools.boxMode = box
+        markup?.focusMarkup()
         arrowControl?.setSelected(arrow, forSegment: 0)
         boxControl?.setSelected(box, forSegment: 0)
     }
 
     @objc func saveWithArrows(_ sender: Any?) {
         do {
-            guard let out = try viewer.saveWithArrows() else { NSSound.beep(); return }
-            Self.saved(out)
+            guard let out = try tools.saveWithArrows() else { NSSound.beep(); return }
+            let fromVideo = markup != nil
+            endMarkup()
+            Self.saved(out, open: !fromVideo)
         } catch {
             guard let window else { return }
             NSAlert(error: error).beginSheetModal(for: window)
@@ -257,15 +318,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
              #selector(blinkZoomToFit(_:)), #selector(blinkActualSize(_:)):
             return viewer.supportsZoom
         case #selector(cropImage(_:)):
-            return viewer.hasCropSelection
+            return tools.hasCropSelection || (markup == nil && viewer.canMarkUpFrames)
         case #selector(toggleArrows(_:)):
-            item.state = viewer.arrowMode ? .on : .off
-            return viewer.canCrop
+            item.state = tools.arrowMode ? .on : .off
+            return viewer.canCrop || viewer.canMarkUpFrames
         case #selector(toggleBoxes(_:)):
-            item.state = viewer.boxMode ? .on : .off
-            return viewer.canCrop
+            item.state = tools.boxMode ? .on : .off
+            return viewer.canCrop || viewer.canMarkUpFrames
         case #selector(saveWithArrows(_:)):
-            return viewer.hasArrows
+            return tools.hasArrows
         case #selector(editFile(_:)):
             item.title = editor.map { "Edit in \($0.name)" } ?? "Edit"
             return editor != nil
@@ -277,6 +338,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     // MARK: Window
 
     func windowWillClose(_ notification: Notification) {
+        markup?.tearDown()
         viewer.tearDown()
         Self.open.removeAll { $0 === self }
         if Self.open.isEmpty { (NSApp.delegate as? AppDelegate)?.lastWindowClosed() }

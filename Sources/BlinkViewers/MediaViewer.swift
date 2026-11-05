@@ -5,11 +5,18 @@ import BlinkShared
 /// Video and audio through AVKit's standard controls. Zoom resizes the window around
 /// the video (there is nothing to scroll), "fit" fills 90% of the screen, actual size
 /// is the video's own pixel size. Doesn't autoplay; Space plays and pauses.
+/// A video or recording a minute or longer reopens where you left off.
 @objc(BlinkVideoViewer) class MediaViewer: NSObject, BlinkPlugin {
     private let playerView = AVPlayerView()
     private let player: AVPlayer
     private let audioOnly: Bool
     private var videoSize: NSSize?
+    private let asset: AVURLAsset
+    private let url: URL
+    private(set) var frameRate: Double = 0
+    private(set) var grabbedSeconds: Double = 0
+    private(set) var grabbedFrame: Int = 0
+    private var quitObserver: NSObjectProtocol?
 
     var view: NSView { playerView }
     var preferredSize: NSSize { audioOnly ? NSSize(width: 480, height: 60) : videoSize ?? NSSize(width: 960, height: 540) }
@@ -21,17 +28,28 @@ import BlinkShared
     init(url: URL, audioOnly: Bool) {
         self.audioOnly = audioOnly
         let asset = AVURLAsset(url: url)
+        self.asset = asset
+        self.url = url
         player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
         super.init()
         playerView.player = player
         playerView.controlsStyle = audioOnly ? .inline : .floating
         playerView.showsFullScreenToggleButton = !audioOnly
         playerView.allowsPictureInPicturePlayback = !audioOnly
+        if let resume = Self.resumePoints[url.path] {
+            player.seek(to: CMTime(seconds: resume, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        // Quitting Blink (or logging out) doesn't close windows first, so save then too.
+        quitObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                                              object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rememberPosition() }
+        }
         if !audioOnly {
             Task { @MainActor [weak self] in
                 guard let track = try? await asset.loadTracks(withMediaType: .video).first,
                       let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) else { return }
                 let r = CGRect(origin: .zero, size: size).applying(transform)
+                self?.frameRate = Double((try? await track.load(.nominalFrameRate)) ?? 0)
                 self?.videoSize = NSSize(width: abs(r.width), height: abs(r.height))
                 self?.actualSize()   // natural size, shrunk only if it won't fit the screen
             }
@@ -49,7 +67,62 @@ import BlinkShared
         }
     }
 
-    func tearDown() { player.pause(); playerView.player = nil }
+    func tearDown() {
+        player.pause()
+        rememberPosition()
+        if let quitObserver { NotificationCenter.default.removeObserver(quitObserver) }
+        playerView.player = nil
+    }
+
+    // MARK: Where you left off
+
+    private static let resumeKey = "ResumePoints"
+    private static var resumePoints: [String: Double] {
+        get { UserDefaults.standard.dictionary(forKey: resumeKey) as? [String: Double] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: resumeKey) }
+    }
+
+    /// Kept for anything a minute or longer, stopped more than 5 s from either end;
+    /// watching to the end (or rewinding to the start) forgets it. Only the last 200.
+    private func rememberPosition() {
+        guard let item = player.currentItem else { return }
+        let duration = CMTimeGetSeconds(item.duration), at = CMTimeGetSeconds(player.currentTime())
+        var points = Self.resumePoints
+        if duration.isFinite, duration >= 60, at > 5, at < duration - 5 {
+            points[url.path] = at
+            var order = UserDefaults.standard.stringArray(forKey: Self.resumeKey + "Order") ?? []
+            order.removeAll { $0 == url.path }
+            order.append(url.path)
+            for old in order.dropLast(200) { points[old] = nil }
+            UserDefaults.standard.set(Array(order.suffix(200)), forKey: Self.resumeKey + "Order")
+        } else {
+            points[url.path] = nil
+        }
+        Self.resumePoints = points
+    }
+
+    // MARK: Marking up a frame
+
+    var canMarkUpFrames: Bool { !audioOnly }
+    var currentSeconds: Double { CMTimeGetSeconds(player.currentTime()) }
+    func play() { player.play(); playerView.window?.makeFirstResponder(playerView) }
+
+    func pauseAndGrabFrame() -> CGImage? {
+        player.pause()
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        gen.requestedTimeToleranceBefore = .zero
+        gen.requestedTimeToleranceAfter = .zero
+        var actual = CMTime.zero
+        let image = try? gen.copyCGImage(at: player.currentTime(), actualTime: &actual)
+        grabbedSeconds = CMTimeGetSeconds(actual)
+        grabbedFrame = frameRate > 0 ? Int((grabbedSeconds * frameRate).rounded()) : 0
+        return image
+    }
+
+    func showControls(_ show: Bool) {
+        playerView.controlsStyle = show ? (audioOnly ? .inline : .floating) : .none
+    }
 
     private func resize(to size: NSSize) {
         guard let window = playerView.window, let screen = window.screen ?? NSScreen.main else { return }

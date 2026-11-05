@@ -26,6 +26,19 @@ protocol Viewer: AnyObject {
     var boxMode: Bool { get set }
     var hasArrows: Bool { get }
     func saveWithArrows() throws -> URL?
+    /// Video: its frames can be paused on and marked up with the picture tools.
+    var canMarkUpFrames: Bool { get }
+    func pauseAndGrabFrame() -> VideoFrame?
+    func resumePlaying()
+    func showControls(_ show: Bool)
+}
+
+/// A still taken from a video: exactly when, and which frame.
+struct VideoFrame {
+    var image: CGImage
+    var seconds: Double
+    var frame: Int
+    var frameRate: Double
 }
 
 extension Viewer {
@@ -40,6 +53,10 @@ extension Viewer {
     var boxMode: Bool { get { false } set {} }
     var hasArrows: Bool { false }
     func saveWithArrows() throws -> URL? { nil }
+    var canMarkUpFrames: Bool { false }
+    func pauseAndGrabFrame() -> VideoFrame? { nil }
+    func resumePlaying() {}
+    func showControls(_ show: Bool) {}
 }
 
 enum FileKind {
@@ -138,4 +155,12 @@ final class PluginViewer: Viewer {
     func actualSize() { plugin.actualSize() }
     func didAppear() { plugin.didAppear() }
     func tearDown() { plugin.tearDown() }
+    var canMarkUpFrames: Bool { plugin.canMarkUpFrames ?? false }
+    func pauseAndGrabFrame() -> VideoFrame? {
+        guard let image = plugin.pauseAndGrabFrame?() else { return nil }
+        return VideoFrame(image: image, seconds: plugin.grabbedSeconds ?? plugin.currentSeconds ?? 0,
+                          frame: plugin.grabbedFrame ?? 0, frameRate: plugin.frameRate ?? 0)
+    }
+    func resumePlaying() { plugin.play?() }
+    func showControls(_ show: Bool) { plugin.showControls?(show) }
 }
