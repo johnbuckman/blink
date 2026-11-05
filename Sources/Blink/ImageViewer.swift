@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import UniformTypeIdentifiers
 
 /// Keeps a document smaller than the window centred instead of pinned bottom-left.
 final class CenteringClipView: NSClipView {
@@ -75,7 +76,13 @@ final class FlippedView: NSView {
 final class ImageViewer: Viewer {
     private let scroll = ZoomScrollView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
     private let canvas = FlippedView()
+    private let url: URL
     private let source: CGImageSource?
+    private var overlay: CropOverlay?
+    /// Tells the window to enable or disable its Crop button.
+    var onCropSelectionChange: ((Bool) -> Void)? { didSet { overlay?.onChange = onCropSelectionChange } }
+    var onArrowsChange: ((Bool) -> Void)? { didSet { overlay?.onArrowsChange = onArrowsChange } }
+    private var sampler: ColorSampler?
     private var pageLayers: [CALayer] = []
     private let decodeQueue = DispatchQueue(label: "blink.decode", qos: .userInitiated)
     private var naturalSize = NSSize(width: 400, height: 300)
@@ -92,6 +99,7 @@ final class ImageViewer: Viewer {
     var preferredContentSize: NSSize? { naturalSize }
 
     init(url: URL) {
+        self.url = url
         source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         canvas.wantsLayer = true
         scroll.documentView = canvas
@@ -132,6 +140,155 @@ final class ImageViewer: Viewer {
                 decode(i) { [weak self] img in self?.pageLayers[i].contents = img }
             }
         }
+        if pageLayers.count == 1 {
+            let o = CropOverlay(frame: canvas.bounds)
+            o.autoresizingMask = [.width, .height]
+            canvas.addSubview(o)
+            o.sampler = { [weak self] in self?.colorSampler() }
+            overlay = o
+        }
+    }
+
+    // MARK: Crop
+
+    var canCrop: Bool { overlay != nil }
+    var hasCropSelection: Bool { overlay?.selection != nil }
+
+    enum CropError: LocalizedError {
+        case notReady, cantWrite(URL)
+        var errorDescription: String? {
+            switch self {
+            case .notReady: return "The picture hasn't finished loading."
+            case .cantWrite(let u): return "Blink couldn't save \(u.lastPathComponent) in \(u.deletingLastPathComponent().path)."
+            }
+        }
+    }
+
+    var arrowMode: Bool {
+        get { overlay?.arrowMode ?? false }
+        set { overlay?.arrowMode = newValue }
+    }
+    var hasArrows: Bool { !(overlay?.arrows.isEmpty ?? true) }
+
+    private func colorSampler() -> ColorSampler? {
+        if sampler == nil, let layer = pageLayers.first, let img = layer.contents {
+            sampler = ColorSampler(img as! CGImage, picture: layer.frame.size)
+        }
+        return sampler
+    }
+
+    /// Saves the selected part of the picture (the frame on screen, for an animation),
+    /// with any arrows, next to the original as name-crop-1.ext, -crop-2 …
+    func crop() throws -> URL? {
+        guard let sel = overlay?.selection else { return nil }
+        return try save(sel, suffix: "crop")
+    }
+
+    /// Saves the whole picture with its arrows as name-arrows-1.ext, -arrows-2 …
+    func saveWithArrows() throws -> URL? {
+        guard hasArrows else { return nil }
+        return try save(canvas.bounds, suffix: "arrows")
+    }
+
+    /// Renders `region` (canvas points) with the arrows drawn in, and writes it in the
+    /// original's format (PNG when that format can't be written). Rotation from EXIF is
+    /// already in the pixels, so the new file has none. The file's description says, in
+    /// plain words, what was done, so a person or an AI reading the file later knows
+    /// what the arrows and labels point at.
+    private func save(_ region: NSRect, suffix: String) throws -> URL? {
+        guard let layer = pageLayers.first else { return nil }
+        guard let contents = layer.contents else { throw CropError.notReady }
+        let img = contents as! CGImage
+        let scale = CGFloat(img.width) / layer.frame.width
+        let px = NSRect(x: region.minX * scale, y: region.minY * scale, width: region.width * scale, height: region.height * scale)
+            .integral.intersection(NSRect(x: 0, y: 0, width: img.width, height: img.height))
+        guard px.width >= 1, px.height >= 1, let cropped = img.cropping(to: px) else { return nil }
+        let arrows = overlay?.arrows ?? []
+
+        var output = cropped
+        if !arrows.isEmpty {
+            guard let ctx = CGContext(data: nil, width: Int(px.width), height: Int(px.height), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: img.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                ?? CGContext(data: nil, width: Int(px.width), height: Int(px.height), bitsPerComponent: 8,
+                             bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CropError.notReady }
+            ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: px.width, height: px.height))
+            // Canvas points (y down) → this bitmap's pixels.
+            ctx.translateBy(x: 0, y: px.height)
+            ctx.scaleBy(x: scale, y: -scale)
+            ctx.translateBy(x: -px.minX / scale, y: -px.minY / scale)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+            Arrow.draw(arrows, picture: layer.frame.size)
+            NSGraphicsContext.restoreGraphicsState()
+            if let made = ctx.makeImage() { output = made }
+        }
+
+        var type = (source.flatMap { CGImageSourceGetType($0) } as String?) ?? UTType.png.identifier
+        var ext = url.pathExtension.isEmpty ? (UTType(type)?.preferredFilenameExtension ?? "png") : url.pathExtension
+        let writable = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
+        if !writable.contains(type) { type = UTType.png.identifier; ext = "png" }
+
+        let dir = url.deletingLastPathComponent()
+        let base = url.deletingPathExtension().lastPathComponent
+        var n = 1
+        var out = dir.appendingPathComponent("\(base)-\(suffix)-\(n).\(ext)")
+        while FileManager.default.fileExists(atPath: out.path) {
+            n += 1
+            out = dir.appendingPathComponent("\(base)-\(suffix)-\(n).\(ext)")
+        }
+
+        let note = describe(original: img, region: px, arrows: arrows, scale: scale)
+        var props = (source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) } as? [CFString: Any]) ?? [:]
+        props[kCGImagePropertyOrientation] = 1
+        var tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+        tiff[kCGImagePropertyTIFFOrientation] = 1
+        tiff[kCGImagePropertyTIFFImageDescription] = note
+        tiff[kCGImagePropertyTIFFSoftware] = "Blink"
+        props[kCGImagePropertyTIFFDictionary] = tiff
+        var exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+        exif[kCGImagePropertyExifUserComment] = note
+        exif[kCGImagePropertyExifPixelXDimension] = Int(px.width)
+        exif[kCGImagePropertyExifPixelYDimension] = Int(px.height)
+        props[kCGImagePropertyExifDictionary] = exif
+        var iptc = props[kCGImagePropertyIPTCDictionary] as? [CFString: Any] ?? [:]
+        iptc[kCGImagePropertyIPTCCaptionAbstract] = note
+        props[kCGImagePropertyIPTCDictionary] = iptc
+        var png = props[kCGImagePropertyPNGDictionary] as? [CFString: Any] ?? [:]
+        png[kCGImagePropertyPNGDescription] = note
+        props[kCGImagePropertyPNGDictionary] = png
+        props[kCGImagePropertyPixelWidth] = nil
+        props[kCGImagePropertyPixelHeight] = nil
+        props[kCGImageDestinationLossyCompressionQuality] = 0.95
+        guard let dest = CGImageDestinationCreateWithURL(out as CFURL, type as CFString, 1, nil) else {
+            throw CropError.cantWrite(out)
+        }
+        CGImageDestinationAddImage(dest, output, props as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { throw CropError.cantWrite(out) }
+        return out
+    }
+
+    /// e.g. "Made in Blink from the original picture /Users/me/Pictures/harbour-sunset.jpg (3000x2000 px): cropped to 1645x1012 px,
+    /// taken from x 600, y 500 of the original. Arrow 1 (yellow) starts at (120, 300) and
+    /// points at (800, 450), with the label "the boat" written along it." Arrow
+    /// positions are in this file's pixels, from its top-left corner. Plain ASCII, since
+    /// EXIF's UserComment can't hold anything else.
+    private func describe(original img: CGImage, region px: NSRect, arrows: [Arrow], scale: CGFloat) -> String {
+        var parts = ["Made in Blink from the original picture \(url.path) (\(img.width)x\(img.height) px)"]
+        if px.width < CGFloat(img.width) || px.height < CGFloat(img.height) {
+            parts[0] += ": cropped to \(Int(px.width))x\(Int(px.height)) px, taken from x \(Int(px.minX)), y \(Int(px.minY)) of the original."
+        } else {
+            parts[0] += ", same size as the original."
+        }
+        for (i, a) in arrows.enumerated() {
+            func pt(_ p: NSPoint) -> String { "(\(Int(p.x * scale - px.minX)), \(Int(p.y * scale - px.minY)))" }
+            var line = "Arrow \(i + 1) (\(a.colorName)) starts at \(pt(a.start)) and points at \(pt(a.end))"
+            line += a.text.isEmpty ? "." : ", with the label \"\(a.text)\" written along it."
+            parts.append(line)
+        }
+        if !arrows.isEmpty { parts.append("Arrow positions are in this image's pixels, from its top-left corner.") }
+        return parts.joined(separator: " ")
     }
 
     func zoomIn() { scroll.step(true) }

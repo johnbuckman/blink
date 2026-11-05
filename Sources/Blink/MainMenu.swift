@@ -22,20 +22,29 @@ enum MainMenu {
         others.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Blink", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Close All Windows", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         add(appMenu, title: "Blink", to: main)
 
         let file = NSMenu(title: "File")
         file.addItem(withTitle: "Open…", action: #selector(AppDelegate.showOpenPanel(_:)), keyEquivalent: "o")
         file.addItem(withTitle: "Show in Finder", action: #selector(DocumentWindowController.showInFinder(_:)), keyEquivalent: "R")
+        file.addItem(withTitle: "Edit", action: #selector(DocumentWindowController.editFile(_:)), keyEquivalent: "e")
         file.addItem(withTitle: "Open in Preview", action: #selector(DocumentWindowController.openInPreview(_:)), keyEquivalent: "")
         file.addItem(.separator())
         file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         add(file, title: "File", to: main)
 
         let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Crop to Selection", action: #selector(DocumentWindowController.cropImage(_:)), keyEquivalent: "k")
+        edit.addItem(withTitle: "Draw Arrows", action: #selector(DocumentWindowController.toggleArrows(_:)), keyEquivalent: "A")
+        edit.addItem(withTitle: "Save with Arrows", action: #selector(DocumentWindowController.saveWithArrows(_:)), keyEquivalent: "s")
         add(edit, title: "Edit", to: main)
 
         let view = NSMenu(title: "View")

@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 APP_NAME="Blink"
 EXE="Blink"
 BUNDLE_ID="com.decentespresso.blink"
-VERSION="1.0.0"
+VERSION="1.1.0"
 DEST="${BLINK_DEST:-$( [ -d "/Applications/AI Apps" ] && echo "/Applications/AI Apps" || echo /Applications )}"
 # The first Developer ID in the keychain (or set BLINK_IDENTITY); ad-hoc signing if there is none.
 IDENTITY="${BLINK_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
@@ -68,6 +68,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
         $(doctype Audio public.audio)
         $(doctype Markdown net.daringfireball.markdown)
         $(doctype Text public.plain-text)
+        $(doctype Word public.rtf com.microsoft.word.doc org.openxmlformats.wordprocessingml.document)
+        $(doctype Source com.netscape.javascript-source org.tcl.tcl-source com.aolserver.adp)
     </array>
     <key>UTImportedTypeDeclarations</key>
     <array>
@@ -82,6 +84,18 @@ cat > "$APP/Contents/Info.plist" <<PLIST
             <key>UTTypeDescription</key><string>Markdown document</string>
             <key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
             <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>md</string><string>markdown</string></array></dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>org.tcl.tcl-source</string>
+            <key>UTTypeDescription</key><string>Tcl script</string>
+            <key>UTTypeConformsTo</key><array><string>public.script</string><string>public.plain-text</string></array>
+            <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>tcl</string></array></dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.aolserver.adp</string>
+            <key>UTTypeDescription</key><string>AOLserver dynamic page</string>
+            <key>UTTypeConformsTo</key><array><string>public.source-code</string><string>public.plain-text</string></array>
+            <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>adp</string></array></dict>
         </dict>
     </array>
 </dict>

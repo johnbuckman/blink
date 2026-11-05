@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 let app = URL(fileURLWithPath: CommandLine.arguments[1])
 let dryRun = CommandLine.arguments.contains("--dry-run")
 let extensions = ["jpg", "jpeg", "png", "gif", "tif", "tiff", "avif", "heic",
-                  "pdf", "csv", "eml", "xlsx", "gpx", "mp4", "m4a", "txt", "md"]
+                  "pdf", "csv", "eml", "xlsx", "gpx", "mp4", "m4a", "txt", "md",
+                  "rtf", "doc", "docx", "js", "tcl", "adp"]
 
 var types: [UTType] = []
 for ext in extensions {

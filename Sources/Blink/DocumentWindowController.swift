@@ -19,6 +19,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     let url: URL
     let viewer: Viewer
+    /// The app the Edit button opens this file in; nil = no Edit button.
+    let editor: Editor?
+    private weak var arrowControl: NSSegmentedControl?
 
     static func open(_ url: URL) {
         let url = url.standardizedFileURL
@@ -34,8 +37,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     private init(url: URL) {
         self.url = url
-        self.viewer = FileKind.of(url).makeViewer(url)
+        let kind = FileKind.of(url)
+        self.viewer = kind.makeViewer(url)
         LaunchTiming.mark("viewer made")
+        self.editor = Editor.of(url, kind: kind)
+        LaunchTiming.mark("editor found")
         let window = BlinkWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
                                  styleMask: [.titled, .closable, .miniaturizable, .resizable],
                                  backing: .buffered, defer: false)
@@ -64,9 +70,58 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         control.segmentStyle = .separated
         control.isEnabled = viewer.supportsZoom
         control.sizeToFit()
-        let holder = NSView(frame: NSRect(x: 0, y: 0, width: control.frame.width + 12, height: control.frame.height))
-        control.frame.origin = .zero
-        holder.addSubview(control)
+        var controls: [NSControl] = [control]
+        if viewer.canCrop {
+            let crop = NSSegmentedControl(labels: ["Crop"], trackingMode: .momentary,
+                                          target: self, action: #selector(cropImage(_:)))
+            crop.setToolTip("Drag on the picture to choose an area, then Crop saves it as a new file (⌘K)", forSegment: 0)
+            crop.controlSize = .small
+            crop.segmentStyle = .separated
+            crop.isEnabled = false
+            crop.sizeToFit()
+            (viewer as? ImageViewer)?.onCropSelectionChange = { [weak crop] has in crop?.isEnabled = has }
+            controls.insert(crop, at: 0)
+
+            let save = NSSegmentedControl(labels: ["Save"], trackingMode: .momentary,
+                                          target: self, action: #selector(saveWithArrows(_:)))
+            save.setToolTip("Save a copy of the picture with its arrows (⌘S)", forSegment: 0)
+            save.controlSize = .small
+            save.segmentStyle = .separated
+            save.isEnabled = false
+            save.sizeToFit()
+            (viewer as? ImageViewer)?.onArrowsChange = { [weak save] has in save?.isEnabled = has }
+            controls.insert(save, at: 1)
+
+            let arrow = NSSegmentedControl(labels: ["Arrow"], trackingMode: .selectAny,
+                                           target: self, action: #selector(arrowButton(_:)))
+            arrow.setToolTip("Draw arrows on the picture; type straight after one to label it (⇧⌘A)", forSegment: 0)
+            arrow.controlSize = .small
+            arrow.segmentStyle = .separated
+            arrow.sizeToFit()
+            arrowControl = arrow
+            controls.insert(arrow, at: 0)
+        }
+        if let editor {
+            let edit = NSSegmentedControl(labels: ["Edit in \(editor.name)"], trackingMode: .momentary,
+                                          target: self, action: #selector(editFile(_:)))
+            edit.setToolTip("Open this file in \(editor.name) (⌘E)", forSegment: 0)
+            edit.controlSize = .small
+            edit.segmentStyle = .separated
+            edit.sizeToFit()
+            controls.insert(edit, at: 0)
+        }
+        let gap: CGFloat = 10
+        let width = controls.reduce(0) { $0 + $1.frame.width } + gap * CGFloat(controls.count - 1)
+        // A little taller than the buttons, with them raised, so they sit inside the
+        // title bar rather than on the edge of the content below it.
+        let lift: CGFloat = 6
+        let holder = NSView(frame: NSRect(x: 0, y: 0, width: width + 12, height: control.frame.height + lift))
+        var x: CGFloat = 0
+        for c in controls {
+            c.frame.origin = NSPoint(x: x, y: lift)
+            holder.addSubview(c)
+            x += c.frame.width + gap
+        }
         let accessory = NSTitlebarAccessoryViewController()
         accessory.view = holder
         accessory.layoutAttribute = .trailing
@@ -123,6 +178,48 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    /// After a crop or save: the new file's full path goes on the clipboard (to paste into
+    /// a chat or a terminal), and the file opens in its own window.
+    private static func saved(_ url: URL) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.path, forType: .string)
+        open(url)
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+    }
+
+    @objc func cropImage(_ sender: Any?) {
+        do {
+            guard let out = try viewer.crop() else { NSSound.beep(); return }
+            Self.saved(out)
+        } catch {
+            guard let window else { return }
+            NSAlert(error: error).beginSheetModal(for: window)
+        }
+    }
+
+    @objc func arrowButton(_ sender: NSSegmentedControl) {
+        viewer.arrowMode = sender.isSelected(forSegment: 0)
+    }
+
+    @objc func toggleArrows(_ sender: Any?) {
+        viewer.arrowMode.toggle()
+        arrowControl?.setSelected(viewer.arrowMode, forSegment: 0)
+    }
+
+    @objc func saveWithArrows(_ sender: Any?) {
+        do {
+            guard let out = try viewer.saveWithArrows() else { NSSound.beep(); return }
+            Self.saved(out)
+        } catch {
+            guard let window else { return }
+            NSAlert(error: error).beginSheetModal(for: window)
+        }
+    }
+
+    @objc func editFile(_ sender: Any?) {
+        editor?.open(url)
+    }
+
     @objc func openInPreview(_ sender: Any?) {
         let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview")
         let kind = FileKind.of(url)
@@ -139,6 +236,16 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         case #selector(blinkZoomIn(_:)), #selector(blinkZoomOut(_:)),
              #selector(blinkZoomToFit(_:)), #selector(blinkActualSize(_:)):
             return viewer.supportsZoom
+        case #selector(cropImage(_:)):
+            return viewer.hasCropSelection
+        case #selector(toggleArrows(_:)):
+            item.state = viewer.arrowMode ? .on : .off
+            return viewer.canCrop
+        case #selector(saveWithArrows(_:)):
+            return viewer.hasArrows
+        case #selector(editFile(_:)):
+            item.title = editor.map { "Edit in \($0.name)" } ?? "Edit"
+            return editor != nil
         default:
             return true
         }

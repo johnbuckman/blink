@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Whether any file arrived during launch (a plain launch shows an Open panel).
     private var openedSomething = false
     private var statusItem: NSStatusItem?
+    /// Set by the menu-bar icon's Quit, the only way to actually quit (besides logout).
+    private var reallyQuit = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         LaunchTiming.mark("willFinishLaunching")
@@ -47,6 +49,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// ⌘Q (and the Dock's Quit) closes Blink's windows but leaves it waiting in the
+    /// menu bar. Only Quit in the menu-bar icon's menu, or logging out / restarting,
+    /// really quits.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let systemQuit = event?.eventID == kAEQuitApplication && event?.attributeDescriptor(forKeyword: kAEQuitReason) != nil
+            || event?.paramDescriptor(forKeyword: kAEQuitReason) != nil
+        if reallyQuit || systemQuit { return .terminateNow }
+        for window in NSApp.windows where window.windowController is DocumentWindowController {
+            window.performClose(nil)
+        }
+        if DocumentWindowController.isEmpty { enterMenuBarMode() }
+        return .terminateCancel
+    }
+
+    @objc private func quitCompletely(_ sender: Any?) {
+        reallyQuit = true
+        NSApp.terminate(sender)
+    }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
@@ -94,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let login = menu.addItem(withTitle: "Open at Login", action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
             login.target = self
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Quit Blink", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            menu.addItem(withTitle: "Quit Blink", action: #selector(quitCompletely(_:)), keyEquivalent: "q").target = self
             menu.delegate = self
             item.menu = menu
             statusItem = item

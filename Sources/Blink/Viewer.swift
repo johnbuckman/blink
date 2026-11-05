@@ -16,6 +16,15 @@ protocol Viewer: AnyObject {
     func didAppear()
     /// Called when the window closes: stop timers, players, file watchers.
     func tearDown()
+    /// Pictures can be cropped to a rectangle drawn over them (see CropOverlay).
+    var canCrop: Bool { get }
+    var hasCropSelection: Bool { get }
+    /// Saves the selection as a new file next to the original and returns it.
+    func crop() throws -> URL?
+    /// Arrows with labels drawn over a picture; saved into a copy of it.
+    var arrowMode: Bool { get set }
+    var hasArrows: Bool { get }
+    func saveWithArrows() throws -> URL?
 }
 
 extension Viewer {
@@ -23,10 +32,16 @@ extension Viewer {
     var supportsZoom: Bool { true }
     func didAppear() {}
     func tearDown() {}
+    var canCrop: Bool { false }
+    var hasCropSelection: Bool { false }
+    func crop() throws -> URL? { nil }
+    var arrowMode: Bool { get { false } set {} }
+    var hasArrows: Bool { false }
+    func saveWithArrows() throws -> URL? { nil }
 }
 
 enum FileKind {
-    case image, pdf, csv, xlsx, email, spreadsheet, gpx, video, audio, text, markdown
+    case image, pdf, csv, xlsx, word, email, spreadsheet, gpx, video, audio, text, markdown
 
     /// Decided from the extension first; files with no (or an unknown) extension
     /// are sniffed, which is how John's extensionless `…_GPX` downloads open.
@@ -38,11 +53,13 @@ enum FileKind {
         case "csv", "tsv": return .csv
         case "eml", "emlx": return .email
         case "xlsx": return .xlsx
-        case "xls", "numbers", "docx", "doc", "pptx", "key", "pages": return .spreadsheet
+        case "rtf", "doc", "docx": return .word
+        case "xls", "numbers", "pptx", "ppt", "key", "pages": return .spreadsheet
         case "gpx": return .gpx
         case "mp4", "mov", "m4v": return .video
         case "m4a", "mp3", "wav", "aac", "aiff", "aif", "flac": return .audio
         case "md", "markdown", "mdown": return .markdown
+        case "txt", "text", "log", "adp", "tcl", "js", "json", "xml", "sh", "py", "css": return .text
         default: return sniff(url)
         }
     }
@@ -74,6 +91,7 @@ enum FileKind {
             // Our own reader gives a zoomable grid; Quick Look is the fallback for odd files.
             if let wb = XLSXWorkbook(url: url) { return CSVViewer(workbook: wb) }
             return PluginViewer.make("BlinkQuickLookViewer", url)
+        case .word: return WordViewer(url: url)
         case .text: return TextViewer(url: url)
         case .pdf: return PluginViewer.make("BlinkPDFViewer", url)
         case .email: return PluginViewer.make("BlinkEmailViewer", url)
