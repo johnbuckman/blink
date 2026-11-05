@@ -6,7 +6,8 @@ import AppKit
 /// eight handles to resize it, or drag inside it to move it. Esc, or a click outside it,
 /// clears it.
 ///
-/// In arrow mode, each drag draws an arrow, coloured to stand out from what's under it.
+/// In arrow mode, each drag draws an arrow, coloured to stand out from what's under it
+/// (in box mode, a box, whose label goes over its top edge).
 /// Typing straight afterwards labels it; Return or Esc finishes the label. ⌘Z takes
 /// arrows back off.
 ///
@@ -22,6 +23,8 @@ final class CropOverlay: NSView {
     var onChange: ((Bool) -> Void)?
 
     var arrowMode = false { didSet { editing = nil; window?.invalidateCursorRects(for: self) } }
+    /// Like arrow mode, but each drag draws a box, labelled over its top edge.
+    var boxMode = false { didSet { editing = nil; window?.invalidateCursorRects(for: self) } }
     private(set) var arrows: [Arrow] = [] { didSet { needsDisplay = true; onArrowsChange?(!arrows.isEmpty) } }
     var onArrowsChange: ((Bool) -> Void)?
     /// Supplies a small copy of the picture once it has decoded.
@@ -33,6 +36,7 @@ final class CropOverlay: NSView {
     private enum Drag {
         case new(NSPoint), move(NSPoint, NSRect), handle(Int, NSRect), arrow(NSPoint)
         case arrowEnd(Int, isStart: Bool), arrowBody(Int, from: NSPoint, original: Arrow)
+        case boxCorner(Int, opposite: NSPoint)
     }
     private var drag: Drag?
 
@@ -61,9 +65,9 @@ final class CropOverlay: NSView {
             caret.lineWidth = max(2 / magnification, c.height * 0.08)
             a.letterColor.setStroke()
             caret.stroke()
-            // Handles on the two ends.
+            // Handles on the two ends (an arrow) or four corners (a box).
             let r = handleSize * 1.4
-            for end in [a.start, a.end] {
+            for end in a.kind == .box ? a.corners : [a.start, a.end] {
                 let h = NSBezierPath(ovalIn: NSRect(x: end.x - r / 2, y: end.y - r / 2, width: r, height: r))
                 NSColor.white.setFill()
                 h.fill()
@@ -131,6 +135,16 @@ final class CropOverlay: NSView {
         let slop = handleSize * 1.4
         let order = (editing.map { [$0] } ?? []) + arrows.indices.reversed().filter { $0 != editing }
         for i in order where i < arrows.count {
+            if arrows[i].kind == .box {
+                let c = arrows[i].corners
+                if let k = c.firstIndex(where: { hypot(raw.x - $0.x, raw.y - $0.y) <= slop }) {
+                    editing = i
+                    snapshotArrows()
+                    drag = .boxCorner(i, opposite: c[(k + 2) % 4])
+                    return
+                }
+                continue
+            }
             for isStart in [true, false] {
                 let e = isStart ? arrows[i].start : arrows[i].end
                 if hypot(raw.x - e.x, raw.y - e.y) <= slop {
@@ -148,7 +162,7 @@ final class CropOverlay: NSView {
             drag = .arrowBody(i, from: raw, original: arrows[i])
             return
         }
-        if arrowMode {
+        if arrowMode || boxMode {
             editing = nil
             drag = .arrow(p)
             return
@@ -177,6 +191,9 @@ final class CropOverlay: NSView {
         case .arrowEnd(let i, let isStart):
             // Not clamped: an end may go past the edge of the picture.
             if isStart { arrows[i].start = raw } else { arrows[i].end = raw }
+        case .boxCorner(let i, let opposite):
+            arrows[i].start = opposite
+            arrows[i].end = raw
         case .arrowBody(let i, let from, let original):
             arrows[i].start = NSPoint(x: original.start.x + raw.x - from.x, y: original.start.y + raw.y - from.y)
             arrows[i].end = NSPoint(x: original.end.x + raw.x - from.x, y: original.end.y + raw.y - from.y)
@@ -205,14 +222,18 @@ final class CropOverlay: NSView {
 
     override func mouseUp(with event: NSEvent) {
         switch drag {
-        case .arrowEnd, .arrowBody:
+        case .arrowEnd, .arrowBody, .boxCorner:
             drag = nil
             return
         default: break
         }
         if case .arrow = drag {
             drag = nil
-            if let a = pending, hypot(a.end.x - a.start.x, a.end.y - a.start.y) * magnification >= 10 {
+            let big: (Arrow) -> Bool = { a in
+                a.kind == .box ? min(a.rect.width, a.rect.height) * self.magnification >= 8
+                               : hypot(a.end.x - a.start.x, a.end.y - a.start.y) * self.magnification >= 10
+            }
+            if let a = pending, big(a) {
                 setArrows(arrows + [a])
                 editing = arrows.count - 1
             }
@@ -244,7 +265,7 @@ final class CropOverlay: NSView {
         let color = sample.map { Arrow.pick(against: $0.average(box), avoiding: used) }
             ?? Arrow.palette.first { !used.contains($0) } ?? Arrow.palette[0]
         // The label is written right alongside the arrow, outlined like it, in its colour.
-        let a = Arrow(start: start, end: end, color: color, textColor: color)
+        let a = Arrow(kind: boxMode ? .box : .arrow, start: start, end: end, color: color, textColor: color)
         return a
     }
 

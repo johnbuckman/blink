@@ -1,14 +1,36 @@
 import AppKit
 
-/// An arrow drawn on a picture, with an optional label written along it. Points are the
-/// picture's (flipped) canvas points; sizes scale with the picture, not the screen, so a
-/// saved copy looks the same as the window.
+/// An arrow or a box drawn on a picture, with an optional label: written along an arrow,
+/// or over a box's top edge. Points are the picture's (flipped) canvas points; sizes scale
+/// with the picture, not the screen, so a saved copy looks the same as the window.
 struct Arrow {
+    enum Kind: String, Codable { case arrow, box }
+    var kind: Kind = .arrow
+    /// For an arrow, its tail and tip; for a box, two opposite corners.
     var start: NSPoint
     var end: NSPoint
     var color: NSColor
     var text = ""
     var textColor: NSColor
+
+    init(kind: Kind = .arrow, start: NSPoint, end: NSPoint, color: NSColor, textColor: NSColor) {
+        self.kind = kind
+        self.start = start
+        self.end = end
+        self.color = color
+        self.textColor = textColor
+    }
+
+    var rect: NSRect {
+        NSRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+    }
+
+    /// A box's corners, clockwise from top-left.
+    var corners: [NSPoint] {
+        let r = rect
+        return [NSPoint(x: r.minX, y: r.minY), NSPoint(x: r.maxX, y: r.minY),
+                NSPoint(x: r.maxX, y: r.maxY), NSPoint(x: r.minX, y: r.maxY)]
+    }
 
     /// Outline drawn round the arrow and its text so either reads on any background.
     static func outline(for color: NSColor) -> NSColor {
@@ -35,8 +57,14 @@ struct Arrow {
         return NSPoint(x: mid.x + px * bow, y: mid.y + py * bow)
     }
 
-    /// How far a point is from the arrow's curve, for clicking on it.
+    /// How far a point is from the arrow's curve or the box's edges, for clicking on it.
     func distance(to p: NSPoint, picture: NSSize) -> CGFloat {
+        if kind == .box {
+            let r = rect
+            let dx = max(r.minX - p.x, 0, p.x - r.maxX), dy = max(r.minY - p.y, 0, p.y - r.maxY)
+            if dx > 0 || dy > 0 { return hypot(dx, dy) }
+            return min(p.x - r.minX, r.maxX - p.x, p.y - r.minY, r.maxY - p.y)   // inside: nearest edge
+        }
         let c = control(picture)
         return (0...40).map { i -> CGFloat in
             let t = CGFloat(i) / 40, u = 1 - t
@@ -49,6 +77,12 @@ struct Arrow {
     /// The curved shaft (to be stroked) and the head (to be filled), the head pointing
     /// along the curve's direction where it arrives.
     func shapes(width w: CGFloat, picture: NSSize) -> (shaft: NSBezierPath, head: NSBezierPath) {
+        if kind == .box {
+            let edge = NSBezierPath(roundedRect: rect, xRadius: w * 0.6, yRadius: w * 0.6)
+            edge.lineWidth = w
+            edge.lineJoinStyle = .round
+            return (edge, NSBezierPath())
+        }
         let c = control(picture)
         let tx = end.x - c.x, ty = end.y - c.y
         let tl = max(hypot(tx, ty), 0.001)
@@ -101,20 +135,30 @@ struct Arrow {
         ])
     }
 
-    func placement(_ picture: NSSize) -> Placement {
+    /// The line the label is written on, left to right: an arrow's shaft (the curve, short
+    /// of the head), or a box's top edge.
+    private func labelLine(_ picture: NSSize) -> [NSPoint] {
+        if kind == .box {
+            let r = rect
+            return (0...16).map { NSPoint(x: r.minX + r.width * CGFloat($0) / 16, y: r.minY) }
+        }
         let w = Self.lineWidth(picture)
         let c = control(picture)
-        // Sample the shaft (the curve, short of the head) into points with distances along it.
         let len = hypot(end.x - start.x, end.y - start.y)
         let tl = max(hypot(end.x - c.x, end.y - c.y), 0.001)
         let headLen = min(w * 4.5, len * 0.6)
         let base = NSPoint(x: end.x - (end.x - c.x) / tl * headLen, y: end.y - (end.y - c.y) / tl * headLen)
-        var pts: [NSPoint] = (0...64).map { i in
+        let pts: [NSPoint] = (0...64).map { i in
             let t = CGFloat(i) / 64, u = 1 - t
             return NSPoint(x: u * u * start.x + 2 * u * t * c.x + t * t * base.x,
                            y: u * u * start.y + 2 * u * t * c.y + t * t * base.y)
         }
-        if base.x < start.x { pts.reverse() }   // so the text runs left to right
+        return base.x < start.x ? pts.reversed() : pts
+    }
+
+    func placement(_ picture: NSSize) -> Placement {
+        // Sample the label's line into points with distances along it.
+        var pts = labelLine(picture)
         // Only the part on the picture carries the label (an arrow can start off the edge).
         let visible = pts.filter { NSRect(origin: .zero, size: picture).insetBy(dx: -1, dy: -1).contains($0) }
         if visible.count >= 2 { pts = visible }

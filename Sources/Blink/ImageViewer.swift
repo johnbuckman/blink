@@ -189,6 +189,10 @@ final class ImageViewer: Viewer {
         get { overlay?.arrowMode ?? false }
         set { overlay?.arrowMode = newValue }
     }
+    var boxMode: Bool {
+        get { overlay?.boxMode ?? false }
+        set { overlay?.boxMode = newValue }
+    }
     var hasArrows: Bool { !(overlay?.arrows.isEmpty ?? true) }
 
     private func colorSampler() -> ColorSampler? {
@@ -324,11 +328,18 @@ final class ImageViewer: Viewer {
                 let off = x < 0 || y < 0 || x > px.width || y > px.height
                 return "(\(Int(x)), \(Int(y)))" + (off ? ", off the edge of the picture" : "")
             }
-            var line = "Arrow \(i + 1) (\(a.colorName)) starts at \(pt(a.start)) and points at \(pt(a.end))"
-            line += a.text.isEmpty ? "." : ", with the label \"\(a.text)\" written along it."
+            var line: String
+            if a.kind == .box {
+                let r = a.rect
+                line = "Box \(i + 1) (\(a.colorName)) is drawn around the area from \(pt(r.origin)) to \(pt(NSPoint(x: r.maxX, y: r.maxY)))"
+                line += a.text.isEmpty ? "." : ", with the label \"\(a.text)\" written over its top edge."
+            } else {
+                line = "Arrow \(i + 1) (\(a.colorName)) starts at \(pt(a.start)) and points at \(pt(a.end))"
+                line += a.text.isEmpty ? "." : ", with the label \"\(a.text)\" written along it."
+            }
             parts.append(line)
         }
-        if !arrows.isEmpty { parts.append("Arrow positions are in this image's pixels, from its top-left corner.") }
+        if !arrows.isEmpty { parts.append("Positions are in this image's pixels, from its top-left corner.") }
         return parts.joined(separator: " ")
     }
 

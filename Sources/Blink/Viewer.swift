@@ -23,6 +23,7 @@ protocol Viewer: AnyObject {
     func crop() throws -> URL?
     /// Arrows with labels drawn over a picture; saved into a copy of it.
     var arrowMode: Bool { get set }
+    var boxMode: Bool { get set }
     var hasArrows: Bool { get }
     func saveWithArrows() throws -> URL?
 }
@@ -36,6 +37,7 @@ extension Viewer {
     var hasCropSelection: Bool { false }
     func crop() throws -> URL? { nil }
     var arrowMode: Bool { get { false } set {} }
+    var boxMode: Bool { get { false } set {} }
     var hasArrows: Bool { false }
     func saveWithArrows() throws -> URL? { nil }
 }

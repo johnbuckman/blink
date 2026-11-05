@@ -8,6 +8,7 @@ struct BlinkEdits: Codable {
         var start: [Double], end: [Double]
         var color: [Double], textColor: [Double]
         var text: String
+        var kind: String?       // "box"; missing = arrow (files saved by 1.1.0)
     }
 
     var version = 1
@@ -46,7 +47,7 @@ struct BlinkEdits: Codable {
         }
         return arrows.compactMap { a in
             guard a.start.count == 2, a.end.count == 2 else { return nil }
-            var arrow = Arrow(start: NSPoint(x: a.start[0] * k, y: a.start[1] * k),
+            var arrow = Arrow(kind: a.kind == "box" ? .box : .arrow, start: NSPoint(x: a.start[0] * k, y: a.start[1] * k),
                               end: NSPoint(x: a.end[0] * k, y: a.end[1] * k),
                               color: color(a.color), textColor: color(a.textColor))
             arrow.text = a.text
@@ -61,6 +62,7 @@ struct BlinkEdits: Codable {
         }
         return StoredArrow(start: [a.start.x * scale - origin.x, a.start.y * scale - origin.y].map(Double.init),
                            end: [a.end.x * scale - origin.x, a.end.y * scale - origin.y].map(Double.init),
-                           color: rgba(a.color), textColor: rgba(a.textColor), text: a.text)
+                           color: rgba(a.color), textColor: rgba(a.textColor), text: a.text,
+                           kind: a.kind == .box ? "box" : nil)
     }
 }

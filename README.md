@@ -16,12 +16,13 @@ A tiny macOS file viewer that opens instantly. One window per file, zoom in / ou
 | md | Two columns: source on the left, GitHub-flavoured rendering (cmark-gfm) on the right. They scroll together and refresh when the file changes. |
 | txt, tcl, adp, js and anything else | Plain text |
 
-Keys: ⌘+ / ⌘= zoom in, ⌘− zoom out, ⌘0 fit, ⌘1 actual size, ⌘E edit, ⌘K crop, ⇧⌘A arrows, ⌘S save with arrows, ⌘Z undo, ⇧⌘R show in Finder, ⌘Q close all windows (Blink keeps running in the menu bar; quit it from the menu-bar icon).
+Keys: ⌘+ / ⌘= zoom in, ⌘− zoom out, ⌘0 fit, ⌘1 actual size, ⌘E edit, ⌘K crop, ⇧⌘A arrows, ⇧⌘B boxes, ⌘S save with arrows, ⌘Z undo, ⇧⌘R show in Finder, ⌘Q close all windows (Blink keeps running in the menu bar; quit it from the menu-bar icon).
 
 ## Crop and arrows (pictures)
 
 * **Crop:** drag on a picture to draw a rectangle. Drag its handles to resize it, drag inside it to move it, and press Esc to clear it. **Crop** (⌘K) saves just that part as `name-crop-1.jpg` (then `-crop-2` …) next to the original, in the original's format, and opens it.
 * **Arrows:** turn on **Arrow** (⇧⌘A), then drag to draw an arrow. It curves gently outwards and is slightly see-through. Its colour is picked to stand out from what's under it, and differs from the other arrows' colours. Type straight away to label it: the label is written along the arrow and follows its curve, in black or white with a halo in the arrow's colour. A long label gets smaller, down to a readable minimum, and then wraps onto more lines. Return finishes the label, and ⌘Z takes arrows and labels back off. **Save** (⌘S) writes `name-arrows-1.jpg`, and a crop includes any arrows.
+* **Boxes:** turn on **Box** (⇧⌘B), then drag to draw a box. It works like an arrow (its own colour, see-through, ⌘Z), but its label goes over its top edge. Drag a corner to resize it, or its edge to move it.
 * **Changing arrows:** click an arrow to select it: handles appear on both ends. Drag an end anywhere, even past the edge of the picture, for an arrow that comes in from outside. Drag the arrow's body to move it whole. Typing edits the selected arrow's label, and Delete on an empty label removes the arrow.
 * **Editable later:** a saved file remembers how it was made: the original's path, the part kept and each arrow, stored in an extended attribute. Reopen it while the original is still there, and the arrows and labels can be changed again; Save then updates that same file.
 * **After saving:** the new file's full path is copied to the clipboard, ready to paste into a chat or a terminal.

@@ -44,7 +44,8 @@ enum MainMenu {
         edit.addItem(.separator())
         edit.addItem(withTitle: "Crop to Selection", action: #selector(DocumentWindowController.cropImage(_:)), keyEquivalent: "k")
         edit.addItem(withTitle: "Draw Arrows", action: #selector(DocumentWindowController.toggleArrows(_:)), keyEquivalent: "A")
-        edit.addItem(withTitle: "Save with Arrows", action: #selector(DocumentWindowController.saveWithArrows(_:)), keyEquivalent: "s")
+        edit.addItem(withTitle: "Draw Boxes", action: #selector(DocumentWindowController.toggleBoxes(_:)), keyEquivalent: "B")
+        edit.addItem(withTitle: "Save with Arrows and Boxes", action: #selector(DocumentWindowController.saveWithArrows(_:)), keyEquivalent: "s")
         add(edit, title: "Edit", to: main)
 
         let view = NSMenu(title: "View")

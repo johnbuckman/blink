@@ -22,6 +22,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     /// The app the Edit button opens this file in; nil = no Edit button.
     let editor: Editor?
     private weak var arrowControl: NSSegmentedControl?
+    private weak var boxControl: NSSegmentedControl?
 
     static func open(_ url: URL) {
         let url = url.standardizedFileURL
@@ -84,7 +85,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
             let save = NSSegmentedControl(labels: ["Save"], trackingMode: .momentary,
                                           target: self, action: #selector(saveWithArrows(_:)))
-            save.setToolTip("Save a copy of the picture with its arrows (⌘S)", forSegment: 0)
+            save.setToolTip("Save a copy of the picture with its arrows and boxes (⌘S)", forSegment: 0)
             save.controlSize = .small
             save.segmentStyle = .separated
             save.isEnabled = false
@@ -100,6 +101,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             arrow.sizeToFit()
             arrowControl = arrow
             controls.insert(arrow, at: 0)
+
+            let box = NSSegmentedControl(labels: ["Box"], trackingMode: .selectAny,
+                                         target: self, action: #selector(boxButton(_:)))
+            box.setToolTip("Draw boxes on the picture; type straight after one to label it (⇧⌘B)", forSegment: 0)
+            box.controlSize = .small
+            box.segmentStyle = .separated
+            box.sizeToFit()
+            boxControl = box
+            controls.insert(box, at: 1)
         }
         if let editor {
             let edit = NSSegmentedControl(labels: ["Edit in \(editor.name)"], trackingMode: .momentary,
@@ -198,12 +208,22 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     }
 
     @objc func arrowButton(_ sender: NSSegmentedControl) {
-        viewer.arrowMode = sender.isSelected(forSegment: 0)
+        setTool(arrow: sender.isSelected(forSegment: 0), box: false)
     }
 
-    @objc func toggleArrows(_ sender: Any?) {
-        viewer.arrowMode.toggle()
-        arrowControl?.setSelected(viewer.arrowMode, forSegment: 0)
+    @objc func boxButton(_ sender: NSSegmentedControl) {
+        setTool(arrow: false, box: sender.isSelected(forSegment: 0))
+    }
+
+    @objc func toggleArrows(_ sender: Any?) { setTool(arrow: !viewer.arrowMode, box: false) }
+    @objc func toggleBoxes(_ sender: Any?) { setTool(arrow: false, box: !viewer.boxMode) }
+
+    /// Arrow and Box are one-or-the-other.
+    private func setTool(arrow: Bool, box: Bool) {
+        viewer.arrowMode = arrow
+        viewer.boxMode = box
+        arrowControl?.setSelected(arrow, forSegment: 0)
+        boxControl?.setSelected(box, forSegment: 0)
     }
 
     @objc func saveWithArrows(_ sender: Any?) {
@@ -240,6 +260,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             return viewer.hasCropSelection
         case #selector(toggleArrows(_:)):
             item.state = viewer.arrowMode ? .on : .off
+            return viewer.canCrop
+        case #selector(toggleBoxes(_:)):
+            item.state = viewer.boxMode ? .on : .off
             return viewer.canCrop
         case #selector(saveWithArrows(_:)):
             return viewer.hasArrows
