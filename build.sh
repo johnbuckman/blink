@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 APP_NAME="Blink"
 EXE="Blink"
 BUNDLE_ID="com.decentespresso.blink"
-VERSION="1.2.0"
+VERSION="1.2.1"
 DEST="${BLINK_DEST:-$( [ -d "/Applications/AI Apps" ] && echo "/Applications/AI Apps" || echo /Applications )}"
 # The first Developer ID in the keychain (or set BLINK_IDENTITY); ad-hoc signing if there is none.
 IDENTITY="${BLINK_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
