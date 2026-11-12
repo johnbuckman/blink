@@ -16,6 +16,11 @@ import BlinkShared
 
     override var view: NSView { wave }
     override var preferredSize: NSSize { NSSize(width: 900, height: 220) }
+    override var supportsZoom: Bool { true }
+    override func zoomIn() { wave.zoom(by: 2) }
+    override func zoomOut() { wave.zoom(by: 0.5) }
+    override func zoomToFit() { wave.zoomAll() }
+    override func actualSize() { wave.zoomTo(10) }
 
     required convenience init(url: URL) { self.init(url: url, audioOnly: true) }
 
@@ -170,13 +175,24 @@ final class WaveformView: NSView {
     var duration: Double = 0 { didSet { if duration != oldValue { needsDisplay = true } } }
     var time: Double = 0 { didSet { follow(); needsDisplay = true } }
 
-    /// At most 20 s shows at once. Playing, the waveform scrolls to keep the playhead a
-    /// third of the way across; paused, it stays put (a two-finger swipe scrolls it), and
-    /// a jump or step off the edge brings the playhead back into view.
-    static let window: Double = 20
+    /// Opens showing the whole sound; ⌘+ and ⌘− zoom in and out around the playhead, ⌘0
+    /// shows it all again, ⌘1 shows 10 s. Zoomed in and playing, the waveform scrolls to keep
+    /// the playhead a third of the way across; paused, it stays put (a two-finger swipe
+    /// scrolls it), and a jump or step off the edge brings the playhead back into view.
     nonisolated static let slicesPerSecond: Double = 200
     private var viewStart: Double = 0 { didSet { if viewStart != oldValue { needsDisplay = true } } }
-    private var span: Double { min(Self.window, max(duration, 0.001)) }
+    /// Seconds shown across the window; nil = all of it.
+    private var zoomSpan: Double? { didSet { needsDisplay = true } }
+    private var span: Double { min(zoomSpan ?? .infinity, max(duration, 0.001)) }
+
+    func zoom(by factor: Double) {
+        guard duration > 0 else { return }
+        let next = min(max(span / factor, 0.5), duration)
+        zoomSpan = next >= duration ? nil : next
+        viewStart = clampStart(time - span / 3)
+    }
+    func zoomAll() { zoomSpan = nil; viewStart = 0 }
+    func zoomTo(_ seconds: Double) { zoomSpan = seconds < duration ? seconds : nil; viewStart = clampStart(time - span / 3) }
     private func clampStart(_ s: Double) -> Double { min(max(s, 0), max(duration - span, 0)) }
 
     private func follow() {
