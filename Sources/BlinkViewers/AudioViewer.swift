@@ -61,8 +61,9 @@ import BlinkShared
 
     // MARK: Peaks
 
-    /// The loudest sample in each of up to 4000 slices of the sound (0…1), decoded with
-    /// AVAssetReader off the main thread; plus the sample rate and length.
+    /// The loudest sample in each 1/200 s slice of the sound (0…1), decoded with
+    /// AVAssetReader off the main thread; plus the sample rate and length. 200 a second
+    /// gives a 20 s window about 4000 slices, finer than the screen.
     private static func readPeaks(_ asset: AVURLAsset) async -> ([Float], Double, Double) {
         guard let track = try? await asset.loadTracks(withMediaType: .audio).first,
               let reader = try? AVAssetReader(asset: asset) else { return ([], 0, 0) }
@@ -77,8 +78,8 @@ import BlinkShared
         reader.add(output)
         guard reader.startReading() else { return ([], rate, duration) }
         let total = max(1, Int(duration * rate))
-        let slices = min(4000, total)
-        let perSlice = max(1, total / slices)
+        let perSlice = max(1, Int(rate / WaveformView.slicesPerSecond))
+        let slices = min(4_000_000, max(1, total / perSlice + 1))
         var peaks = [Float](repeating: 0, count: slices)
         var index = 0
         while let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
@@ -167,7 +168,30 @@ import BlinkShared
 final class WaveformView: NSView {
     var peaks: [Float] = [] { didSet { needsDisplay = true } }
     var duration: Double = 0 { didSet { if duration != oldValue { needsDisplay = true } } }
-    var time: Double = 0 { didSet { needsDisplay = true } }
+    var time: Double = 0 { didSet { follow(); needsDisplay = true } }
+
+    /// At most 20 s shows at once. Playing, the waveform scrolls to keep the playhead a
+    /// third of the way across; paused, it stays put (a two-finger swipe scrolls it), and
+    /// a jump or step off the edge brings the playhead back into view.
+    static let window: Double = 20
+    nonisolated static let slicesPerSecond: Double = 200
+    private var viewStart: Double = 0 { didSet { if viewStart != oldValue { needsDisplay = true } } }
+    private var span: Double { min(Self.window, max(duration, 0.001)) }
+    private func clampStart(_ s: Double) -> Double { min(max(s, 0), max(duration - span, 0)) }
+
+    private func follow() {
+        if isPlaying?() == true {
+            viewStart = clampStart(time - span / 3)
+        } else if time < viewStart || time > viewStart + span {
+            viewStart = clampStart(time - span / 3)
+        }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard isPlaying?() != true, duration > span else { return super.scrollWheel(with: event) }
+        let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
+        viewStart = clampStart(viewStart - Double(delta) * span / Double(max(track.width, 1)))
+    }
     private(set) var selection: ClosedRange<Double>? { didSet { needsDisplay = true } }
     private(set) var comment = "" { didSet { needsDisplay = true } }
 
@@ -186,13 +210,18 @@ final class WaveformView: NSView {
     func clearSelection() { selection = nil; comment = "" }
 
     private var track: NSRect { bounds.insetBy(dx: 16, dy: 0).divided(atDistance: 30, from: .minYEdge).remainder.insetBy(dx: 0, dy: 10) }
-    private func x(_ t: Double) -> CGFloat { track.minX + track.width * CGFloat(duration > 0 ? t / duration : 0) }
-    private func t(_ x: CGFloat) -> Double { duration * Double(min(max((x - track.minX) / max(track.width, 1), 0), 1)) }
+    private func x(_ t: Double) -> CGFloat { track.minX + track.width * CGFloat((t - viewStart) / span) }
+    private func t(_ x: CGFloat) -> Double {
+        min(max(viewStart + span * Double((x - track.minX) / max(track.width, 1)), 0), duration)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor(white: 0.12, alpha: 1).setFill()
         bounds.fill()
         let r = track
+        // The waveform, selection and playhead stay inside the track when scrolled.
+        NSGraphicsContext.saveGraphicsState()
+        NSRect(x: r.minX - 1, y: 0, width: r.width + 2, height: bounds.height).clip()
         if let sel = selection {
             NSColor.controlAccentColor.withAlphaComponent(0.28).setFill()
             NSRect(x: x(sel.lowerBound), y: r.minY - 6, width: x(sel.upperBound) - x(sel.lowerBound), height: r.height + 12).fill()
@@ -202,7 +231,10 @@ final class WaveformView: NSView {
             let columns = max(1, Int(r.width))
             let played = x(time)
             for c in 0..<columns {
-                let a = c * peaks.count / columns, b = max(a + 1, (c + 1) * peaks.count / columns)
+                // This column's stretch of time, as slices.
+                let t0 = viewStart + span * Double(c) / Double(columns), t1 = viewStart + span * Double(c + 1) / Double(columns)
+                let a = min(Int(t0 * Self.slicesPerSecond), peaks.count - 1)
+                let b = max(a + 1, min(Int(t1 * Self.slicesPerSecond), peaks.count))
                 let v = CGFloat(peaks[a..<min(b, peaks.count)].max() ?? 0)
                 let h = max(1, v * r.height)
                 let px = r.minX + CGFloat(c)
@@ -216,6 +248,8 @@ final class WaveformView: NSView {
         // Playhead.
         NSColor.systemRed.setFill()
         NSRect(x: x(time) - 1, y: r.minY - 8, width: 2, height: r.height + 16).fill()
+
+        NSGraphicsContext.restoreGraphicsState()
 
         // Times along the top, and the selection's comment above it.
         let small: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
