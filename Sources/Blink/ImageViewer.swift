@@ -238,7 +238,7 @@ final class ImageViewer: Viewer {
     }
 
     /// Saves the selected part of the picture (the frame on screen, for an animation),
-    /// with any arrows, next to the original as name-crop-1.ext, -crop-2 …
+    /// with any arrows, next to the original as name-crop-1.avif, -crop-2 …
     func crop() throws -> URL? {
         guard let sel = overlay?.selection else { return nil }
         return try save(sel, suffix: "crop")
@@ -250,8 +250,8 @@ final class ImageViewer: Viewer {
         return try save(canvas.bounds, suffix: "arrows")
     }
 
-    /// Renders `region` (canvas points) with the arrows drawn in, and writes it in the
-    /// original's format (PNG when that format can't be written). Rotation from EXIF is
+    /// Renders `region` (canvas points) with the arrows drawn in, and writes it as AVIF
+    /// for a crop, else in the original's format (PNG when that format can't be written). Rotation from EXIF is
     /// already in the pixels, so the new file has none. The file's description says, in
     /// plain words, what was done, so a person or an AI reading the file later knows
     /// what the arrows and labels point at.
@@ -289,6 +289,8 @@ final class ImageViewer: Viewer {
             ?? UTType(filenameExtension: url.pathExtension)?.identifier ?? UTType.png.identifier
         var ext = url.pathExtension.isEmpty ? (UTType(type)?.preferredFilenameExtension ?? "png") : url.pathExtension
         let writable = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
+        // Crops are always AVIF: small, and it keeps the note (EXIF, TIFF, IPTC) intact.
+        if suffix == "crop", writable.contains(UTType.avif.identifier) { type = UTType.avif.identifier; ext = "avif" }
         if !writable.contains(type) { type = UTType.png.identifier; ext = "png" }
 
         let dir = url.deletingLastPathComponent()

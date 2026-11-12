@@ -23,7 +23,7 @@ Keys: ⌘+ / ⌘= zoom in, ⌘− zoom out, ⌘0 fit, ⌘1 actual size, ⌘E edi
 
 ## Crop and arrows (pictures)
 
-* **Crop:** drag on a picture to draw a rectangle. Drag its handles to resize it, drag inside it to move it, and press Esc to clear it. **Crop** (⌘K) saves just that part as `name-crop-1.jpg` (then `-crop-2` …) next to the original, in the original's format, and opens it.
+* **Crop:** drag on a picture to draw a rectangle. Drag its handles to resize it, drag inside it to move it, and press Esc to clear it. **Crop** (⌘K) saves just that part as `name-crop-1.avif` (then `-crop-2` …) next to the original, and opens it. Crops are always AVIF, whatever the original's format.
 * **Arrows:** turn on **Arrow** (⇧⌘A), then drag to draw an arrow. It curves gently outwards and is slightly see-through. Its colour is picked to stand out from what's under it, and differs from the other arrows' colours. Type straight away to label it: the label is written along the arrow and follows its curve, in black or white with a halo in the arrow's colour. A long label gets smaller, down to a readable minimum, and then wraps onto more lines. Return finishes the label, and ⌘Z takes arrows and labels back off. **Save** (⌘S) writes `name-arrows-1.jpg`, and a crop includes any arrows.
 * **Boxes:** turn on **Box** (⇧⌘B), then drag to draw a box. It works like an arrow (its own colour, see-through, ⌘Z), but its label goes over its top edge. Drag a corner to resize it, or its edge to move it.
 * **Preview** (pictures and PDFs) hands the file to Preview, for anything Blink doesn't do.
