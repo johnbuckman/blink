@@ -290,7 +290,7 @@ final class ImageViewer: Viewer {
         var ext = url.pathExtension.isEmpty ? (UTType(type)?.preferredFilenameExtension ?? "png") : url.pathExtension
         let writable = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
         // Crops are always AVIF: small, and it keeps the note (EXIF, TIFF, IPTC) intact.
-        if suffix == "crop", writable.contains(UTType.avif.identifier) { type = UTType.avif.identifier; ext = "avif" }
+        if suffix == "crop", writable.contains("public.avif") { type = "public.avif"; ext = "avif" }
         if !writable.contains(type) { type = UTType.png.identifier; ext = "png" }
 
         let dir = url.deletingLastPathComponent()
