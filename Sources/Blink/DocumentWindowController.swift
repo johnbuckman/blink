@@ -130,6 +130,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             boxControl = box
             controls.insert(box, at: 1)
         }
+        if viewer.canClip {
+            let clip = NSSegmentedControl(labels: ["Clip"], trackingMode: .momentary,
+                                          target: self, action: #selector(cropImage(_:)))
+            clip.setToolTip("Pause, drag across the waveform and type a comment; Clip saves that stretch (⌘K)", forSegment: 0)
+            clip.controlSize = .small
+            clip.segmentStyle = .separated
+            clip.sizeToFit()
+            controls.insert(clip, at: 0)
+        }
         if let iv = viewer as? ImageViewer { wire(iv) }
         if let editor {
             let edit = NSSegmentedControl(labels: ["Edit in \(editor.name)"], trackingMode: .momentary,
@@ -155,7 +164,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         let holder = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: control.frame.height + 6))
         for c in controls { holder.addSubview(c) }
         titleHolder = holder
-        let shortcuts: [String: String] = ["Crop": "⌘K", "Save": "⌘S", "Arrow": "⇧⌘A", "Box": "⇧⌘B", "Preview": "⇧⌘P"]
+        let shortcuts: [String: String] = ["Crop": "⌘K", "Clip": "⌘K", "Save": "⌘S", "Arrow": "⇧⌘A", "Box": "⇧⌘B", "Preview": "⇧⌘P"]
         for case let c as NSSegmentedControl in controls {
             let labels = (0..<c.segmentCount).map { c.label(forSegment: $0) ?? "" }
             let hints: [String]
@@ -390,6 +399,14 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     }
 
     @objc func cropImage(_ sender: Any?) {
+        if viewer.canClip {
+            guard viewer.hasClipSelection else { NSSound.beep(); return }
+            viewer.saveClip { [weak self] out, error in
+                if let out { Self.saved(out, open: false) }
+                else if let error, let window = self?.window { NSAlert(error: error).beginSheetModal(for: window) }
+            }
+            return
+        }
         if viewer.canMarkUpFrames, markup == nil { beginMarkup(); return }   // first, pause to draw the area
         do {
             guard let out = try tools.crop() else { NSSound.beep(); return }
@@ -458,7 +475,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
              #selector(blinkZoomToFit(_:)), #selector(blinkActualSize(_:)):
             return viewer.supportsZoom
         case #selector(cropImage(_:)):
-            return tools.hasCropSelection || (markup == nil && viewer.canMarkUpFrames)
+            return tools.hasCropSelection || (markup == nil && viewer.canMarkUpFrames) || viewer.hasClipSelection
         case #selector(toggleArrows(_:)):
             item.state = tools.arrowMode ? .on : .off
             return viewer.canCrop || viewer.canMarkUpFrames

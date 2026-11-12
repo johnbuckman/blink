@@ -34,6 +34,10 @@ protocol Viewer: AnyObject {
     func togglePlay()
     var isPlaying: Bool { get }
     func step(by seconds: Double)
+    /// Audio: save the stretch selected on the waveform as a clip.
+    var canClip: Bool { get }
+    var hasClipSelection: Bool { get }
+    func saveClip(_ done: @escaping (URL?, NSError?) -> Void)
 }
 
 /// A still taken from a video: exactly when, and which frame.
@@ -63,6 +67,9 @@ extension Viewer {
     func togglePlay() {}
     var isPlaying: Bool { false }
     func step(by seconds: Double) {}
+    var canClip: Bool { false }
+    var hasClipSelection: Bool { false }
+    func saveClip(_ done: @escaping (URL?, NSError?) -> Void) { done(nil, nil) }
 }
 
 enum FileKind {
@@ -82,7 +89,8 @@ enum FileKind {
         case "xls", "numbers", "pptx", "ppt", "key", "pages": return .spreadsheet
         case "gpx": return .gpx
         case "mp4", "mov", "m4v": return .video
-        case "m4a", "mp3", "wav", "aac", "aiff", "aif", "aifc", "flac", "caf", "m4b", "m4r", "ogg", "oga", "opus":
+        case "m4a", "mp3", "wav", "aac", "aiff", "aif", "aifc", "flac", "caf", "m4b", "m4r", "ogg", "oga", "opus",
+             "mp2", "ac3", "eac3", "amr", "au", "snd", "w64":
             return .audio
         case "md", "markdown", "mdown": return .markdown
         case "txt", "text", "log", "adp", "tcl", "js", "json", "xml", "sh", "py", "css": return .text
@@ -172,4 +180,10 @@ final class PluginViewer: Viewer {
     func togglePlay() { plugin.togglePlay?() }
     var isPlaying: Bool { plugin.isPlaying ?? false }
     func step(by seconds: Double) { plugin.step?(by: seconds) }
+    var canClip: Bool { plugin.canClip ?? false }
+    var hasClipSelection: Bool { plugin.hasClipSelection ?? false }
+    func saveClip(_ done: @escaping (URL?, NSError?) -> Void) {
+        guard let save = plugin.saveClip else { return done(nil, nil) }
+        save(done)
+    }
 }

@@ -7,12 +7,12 @@ import BlinkShared
 /// is the video's own pixel size. Doesn't autoplay; Space plays and pauses.
 /// A video or recording a minute or longer reopens where you left off.
 @objc(BlinkVideoViewer) class MediaViewer: NSObject, BlinkPlugin {
-    private let playerView = AVPlayerView()
-    private let player: AVPlayer
+    let playerView = AVPlayerView()
+    let player: AVPlayer
     private let audioOnly: Bool
     private var videoSize: NSSize?
-    private let asset: AVURLAsset
-    private let url: URL
+    let asset: AVURLAsset
+    let url: URL
     private(set) var frameRate: Double = 0
     private(set) var grabbedSeconds: Double = 0
     private(set) var grabbedFrame: Int = 0
@@ -174,8 +174,4 @@ import BlinkShared
         guard !audioOnly, let v = videoSize else { return }
         resize(to: v)
     }
-}
-
-@objc(BlinkAudioViewer) final class AudioViewer: MediaViewer {
-    override class var isAudio: Bool { true }
 }

@@ -29,6 +29,10 @@ import AppKit
     @objc optional var isPlaying: Bool { get }
     /// Video only: moves the playhead by this many seconds (exactly, staying paused).
     @objc optional func step(by seconds: Double)
+    /// Audio only: a stretch selected on the waveform can be saved as a clip (⌘K).
+    @objc optional var canClip: Bool { get }
+    @objc optional var hasClipSelection: Bool { get }
+    @objc optional func saveClip(_ done: @escaping (URL?, NSError?) -> Void)
     /// Video only: shows or hides the player's controls (hidden while a frame is marked up).
     @objc optional func showControls(_ show: Bool)
     /// Video only: the frame pauseAndGrabFrame returned: its exact time, its number

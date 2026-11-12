@@ -14,7 +14,8 @@ It's built for **annotating pictures and video stills for AI models to read**. C
 | rtf, doc, docx | AppKit's own importers: fonts, styles, tables and pictures on a white page |
 | xls, pptx, numbers, pages, key | Apple's Quick Look renderer |
 | gpx | Track, waypoints, distance, climb and time on OpenStreetMap tiles, or OpenTopoMap (contours, hillshade). Files with no extension are recognised by content. |
-| mp4, mov, m4v; m4a, mp3, wav, aac, aiff, flac, caf, m4b, ogg, opus | AVKit player. Anything a minute or longer reopens where you left off. |
+| mp4, mov, m4v | AVKit player. Anything a minute or longer reopens where you left off. |
+| m4a, mp3, wav, aac, aiff, flac, caf, m4b, ogg, opus, mp2, ac3, eac3, amr, au, w64 | A waveform with a moving playhead: click to jump, Space plays and pauses, ← → step when paused. Paused, drag across it to select a stretch and type a comment; ⌘K saves that stretch as an .m4a clip with the comment and its exact source (path, times, sample numbers) in its metadata, then plays on. (wma, dts and mka need codecs macOS doesn't have.) |
 | md | Two columns: source on the left, GitHub-flavoured rendering (cmark-gfm) on the right. They scroll together and refresh when the file changes. |
 | txt, tcl, adp, js and anything else | Plain text |
 
