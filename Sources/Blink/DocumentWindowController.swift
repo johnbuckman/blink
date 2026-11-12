@@ -44,6 +44,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     static func open(_ url: URL) {
         let url = url.standardizedFileURL
+        RecentFiles.note(url)
         if let existing = open.first(where: { $0.url == url }) {
             existing.window?.makeKeyAndOrderFront(nil)
             return

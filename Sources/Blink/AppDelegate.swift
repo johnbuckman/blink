@@ -109,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let menu = NSMenu()
             menu.addItem(withTitle: "Open…", action: #selector(showOpenPanel(_:)), keyEquivalent: "o").target = self
             menu.addItem(.separator())
+            // The recent files go here, rebuilt each time the menu opens (menuNeedsUpdate).
             let login = menu.addItem(withTitle: "Open at Login", action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
             login.target = self
             menu.addItem(.separator())
@@ -143,5 +144,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.item(withTitle: "Open at Login")?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+
+        // Replace the recent files, between the first separator and "Open at Login".
+        guard let first = menu.items.firstIndex(where: { $0.isSeparatorItem }),
+              let login = menu.items.firstIndex(where: { $0.title == "Open at Login" }) else { return }
+        for i in stride(from: login - 1, through: first + 1, by: -1) { menu.removeItem(at: i) }
+        let recent = RecentFiles.menuItems(target: self, action: #selector(openRecent(_:)))
+        guard !recent.isEmpty else { return }
+        var at = first + 1
+        for item in recent { menu.insertItem(item, at: at); at += 1 }
+        let clear = NSMenuItem(title: "Clear Recent Files", action: #selector(clearRecent(_:)), keyEquivalent: "")
+        clear.target = self
+        menu.insertItem(.separator(), at: at)
+        menu.insertItem(clear, at: at + 1)
+        menu.insertItem(.separator(), at: at + 2)
     }
+
+    @objc func openRecent(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        open([url])
+    }
+
+    @objc func clearRecent(_ sender: Any?) { RecentFiles.clear() }
 }
