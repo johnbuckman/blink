@@ -132,7 +132,15 @@ import BlinkShared
     }
 
     var isPlaying: Bool { player.rate != 0 }
-    func togglePlay() { isPlaying ? player.pause() : player.play() }
+    func togglePlay() {
+        if isPlaying { return player.pause() }
+        // At the end, Space plays it again from the start.
+        if let item = player.currentItem, item.duration.isNumeric,
+           CMTimeGetSeconds(item.duration) - CMTimeGetSeconds(player.currentTime()) < 0.05 {
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        player.play()
+    }
 
     func step(by seconds: Double) {
         let duration = player.currentItem.map { CMTimeGetSeconds($0.duration) } ?? .infinity
