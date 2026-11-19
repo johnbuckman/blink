@@ -6,9 +6,13 @@ import AppKit
 struct Editor {
     let name: String
     let bundleID: String
+    /// The title-bar button's label, when "Edit in <name>" is too long.
+    var button: String? = nil
+
+    var buttonLabel: String { button ?? "Edit in \(name)" }
 
     static let photoshop = Editor(name: "Photoshop", bundleID: "com.adobe.Photoshop")
-    static let finalCut = Editor(name: "Final Cut Pro", bundleID: "com.apple.FinalCut")
+    static let finalCut = Editor(name: "Final Cut Pro", bundleID: "com.apple.FinalCut", button: "FCP")
     static let audition = Editor(name: "Audition", bundleID: "com.adobe.Audition")
     static let excel = Editor(name: "Excel", bundleID: "com.microsoft.Excel")
     static let word = Editor(name: "Word", bundleID: "com.microsoft.Word")

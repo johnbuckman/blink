@@ -142,7 +142,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         }
         if let iv = viewer as? ImageViewer { wire(iv) }
         if let editor {
-            let edit = NSSegmentedControl(labels: ["Edit in \(editor.name)"], trackingMode: .momentary,
+            let edit = NSSegmentedControl(labels: [editor.buttonLabel], trackingMode: .momentary,
                                           target: self, action: #selector(editFile(_:)))
             edit.setToolTip("Open this file in \(editor.name) (⌘E)", forSegment: 0)
             edit.controlSize = .small
@@ -171,7 +171,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             let hints: [String]
             if c === control {
                 hints = ["⌘−", "⌘+", "⌘0", "⌘1"]
-            } else if labels.first?.hasPrefix("Edit in") == true {
+            } else if let editor, labels.first == editor.buttonLabel {
                 hints = [labels[0] + "  ⌘E"]
             } else {
                 hints = labels.map { l in shortcuts[l].map { l + "  " + $0 } ?? l }
@@ -183,6 +183,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
         accessory.view = holder
         accessory.layoutAttribute = .trailing
         window.addTitlebarAccessoryViewController(accessory)
+        updateTitleVisibility()
         LaunchTiming.mark("window + zoom buttons made")
         // Video keys, ahead of the player and the title-bar buttons (which would otherwise
         // take Space once clicked): Space always plays or pauses; when paused, ← → step 1 s,
@@ -218,7 +219,24 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             x += b.control.frame.width + gap
         }
         holder.setFrameSize(NSSize(width: x - gap + 12, height: holder.frame.height))
+        updateTitleVisibility()
     }
+
+    /// Hides the filename when the window is too narrow for it to fit, centred, left of
+    /// the title-bar buttons (it would otherwise be drawn over them).
+    private func updateTitleVisibility() {
+        guard let window, let holder = titleHolder, holder.window != nil else { return }
+        let font = NSFont.titleBarFont(ofSize: 0)
+        let text = (window.title as NSString).size(withAttributes: [.font: font]).width
+        let icon: CGFloat = window.representedURL == nil ? 0 : 22     // the proxy icon and its gap
+        let titleRight = (window.frame.width + text + icon) / 2
+        let buttonsLeft = holder.convert(holder.bounds, to: nil).minX
+        let fits = titleRight + 12 <= buttonsLeft
+        let visibility: NSWindow.TitleVisibility = fits ? .visible : .hidden
+        if window.titleVisibility != visibility { window.titleVisibility = visibility }
+    }
+
+    func windowDidResize(_ notification: Notification) { updateTitleVisibility() }
 
     private func showHints(_ on: Bool) {
         guard on != showingHints else { return }
