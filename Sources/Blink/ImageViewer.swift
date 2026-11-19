@@ -38,6 +38,9 @@ final class ZoomScrollView: NSScrollView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Set for a still from a video, so it lines up exactly with the video it replaces.
+    var fitEnlarges = false
+
     @objc private func userMagnified() { fitting = false }
 
     override func layout() {
@@ -51,7 +54,8 @@ final class ZoomScrollView: NSScrollView {
         let avail = contentView.bounds.size.applying(.init(scaleX: magnification, y: magnification))
         let m = min(avail.width / doc.frame.width, avail.height / doc.frame.height)
         // Fit only ever shrinks; small images show at their real size, like Preview.
-        magnification = min(m, 1)
+        // A video still fills the window as the video did, enlarged if need be.
+        magnification = fitEnlarges ? m : min(m, 1)
     }
 
     func step(_ up: Bool) {
@@ -185,9 +189,10 @@ final class ImageViewer: Viewer {
         source = nil
         videoFrame = (video, still)
         scroll.backgroundColor = .black   // like the player around the video
+        scroll.fitEnlarges = true
         canvas.wantsLayer = true
         scroll.documentView = canvas
-        // The window shows the video at its own size, so keep the still at the same scale.
+        // Fitted to the window, enlarged if need be, so it sits exactly where the video was.
         let size = NSSize(width: image.width, height: image.height)
         naturalSize = size
         canvas.frame = NSRect(origin: .zero, size: size)
