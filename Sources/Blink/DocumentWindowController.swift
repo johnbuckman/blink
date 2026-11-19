@@ -160,6 +160,16 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
             preview.sizeToFit()
             controls.insert(preview, at: 0)
         }
+        // Videos can go to QuickTime Player too.
+        if kind == .video, NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.QuickTimePlayerX") != nil {
+            let qt = NSSegmentedControl(labels: ["QuickTime"], trackingMode: .momentary,
+                                        target: self, action: #selector(openInQuickTime(_:)))
+            qt.setToolTip("Open this video in QuickTime Player", forSegment: 0)
+            qt.controlSize = .small
+            qt.segmentStyle = .separated
+            qt.sizeToFit()
+            controls.insert(qt, at: 0)
+        }
         // A little taller than the buttons, with them raised, so they sit inside the
         // title bar rather than on the edge of the content below it.
         let holder = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: control.frame.height + 6))
@@ -475,6 +485,15 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
 
     @objc func editFile(_ sender: Any?) {
         editor?.open(url)
+    }
+
+    /// Pauses here, so the two don't play over each other.
+    @objc func openInQuickTime(_ sender: Any?) {
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.QuickTimePlayerX") else {
+            NSSound.beep(); return
+        }
+        if viewer.isPlaying { viewer.togglePlay() }
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
     }
 
     @objc func openInPreview(_ sender: Any?) {
