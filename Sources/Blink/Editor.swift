@@ -11,7 +11,7 @@ struct Editor {
 
     var buttonLabel: String { button ?? "Edit in \(name)" }
 
-    static let photoshop = Editor(name: "Photoshop", bundleID: "com.adobe.Photoshop")
+    static let photoshop = Editor(name: "Photoshop", bundleID: "com.adobe.Photoshop", button: "Photoshop")
     static let finalCut = Editor(name: "Final Cut Pro", bundleID: "com.apple.FinalCut", button: "FCP")
     static let audition = Editor(name: "Audition", bundleID: "com.adobe.Audition")
     static let excel = Editor(name: "Excel", bundleID: "com.microsoft.Excel")
