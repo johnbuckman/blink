@@ -20,7 +20,7 @@ import BlinkShared
     private var pauseWatch: NSKeyValueObservation?
 
     var view: NSView { playerView }
-    var preferredSize: NSSize { audioOnly ? NSSize(width: 480, height: 60) : videoSize.map { NSSize(width: $0.width / 2, height: $0.height / 2) } ?? NSSize(width: 960, height: 540) }
+    var preferredSize: NSSize { audioOnly ? NSSize(width: 480, height: 60) : videoSize ?? NSSize(width: 960, height: 540) }
     class var isAudio: Bool { false }
 
     required convenience init(url: URL) { self.init(url: url, audioOnly: Self.isAudio) }
@@ -61,7 +61,7 @@ import BlinkShared
                 let r = CGRect(origin: .zero, size: size).applying(transform)
                 self?.frameRate = Double((try? await track.load(.nominalFrameRate)) ?? 0)
                 self?.videoSize = NSSize(width: abs(r.width), height: abs(r.height))
-                self?.halfSize()     // opens at 50%, shrunk further only if it won't fit the screen
+                self?.halfSize()     // opens filling half the screen
             }
         }
     }
@@ -183,9 +183,12 @@ import BlinkShared
         resize(to: v)
     }
 
-    /// A video first opens at half its size.
+    /// A video first opens filling half the screen (half its width and half its height,
+    /// whichever comes first), whatever the video's own size.
     func halfSize() {
-        guard !audioOnly, let v = videoSize else { return }
-        resize(to: NSSize(width: v.width / 2, height: v.height / 2))
+        guard !audioOnly, let v = videoSize, let screen = playerView.window?.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame.size
+        let scale = min(visible.width * 0.5 / v.width, visible.height * 0.5 / v.height)
+        resize(to: NSSize(width: v.width * scale, height: v.height * scale))
     }
 }
